@@ -1,0 +1,8 @@
+# Environment variables
+.env
+
+# Poetry
+#poetry.lock
+
+# IDE files
+.vscode/
