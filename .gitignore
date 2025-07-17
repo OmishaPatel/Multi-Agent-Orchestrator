@@ -6,3 +6,14 @@
 
 # IDE files
 .vscode/
+
+# Kiro files
+.kiro/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+#scratch md files
+DEVELOPMENT_JOURNAL.md
