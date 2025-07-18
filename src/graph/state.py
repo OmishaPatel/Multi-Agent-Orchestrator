@@ -1,6 +1,6 @@
-from typing import List, TypedDict, Optional, Dict, Annotated
+from typing import List, TypedDict, Optional, Dict, Annotated, Literal
 from langgraph.graph.message import add_messages
-from pydantic import BaseModel, Field, validator, staticmethod
+from pydantic import BaseModel, Field, validator
 from datetime import datetime
 
 #Output format for planning agent to generate
@@ -53,14 +53,19 @@ class AgentStateValidator(BaseModel):
                     raise ValueError(f"Task {task.get('id', 'unknown')} missing required field: {field}")
             valid_types = ['research', 'code', 'analysis', 'summary', 'calculation']
             if task['type'] not in valid_types:
-                raise ValueError(f"Invalid task type: {task['type']}. Must be one of {valid_statuses}")
+                raise ValueError(f"Invalid task type: {task['type']}. Must be one of {valid_types}")
+            
+            # Validate status
+            valid_statuses = ['pending', 'in_progress', 'completed', 'failed']
+            if task['status'] not in valid_statuses:
+                raise ValueError(f"Invalid task status: {task['status']}. Must be one of {valid_statuses}")
 
             for dep_id in task['dependencies']:
                 if dep_id not in task_ids:
                     raise ValueError(f"Task {task['id']} has invalid dependency: {dep_id}")
         return v
     
-    @validator('user_feedback'):
+    @validator('user_feedback')
     def validate_feedback_when_rejected(cls, v, values):
         approval_status = values.get('human_approval_status')
         if approval_status == 'rejected' and not v:
@@ -90,7 +95,7 @@ class StateManager:
             next_task_id=None,
             messages=[],
             human_approval_status='pending',
-            user_feedback=None
+            user_feedback=None,
             final_report=None
         )
 

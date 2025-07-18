@@ -1,0 +1,22 @@
+{
+  "code_execution_success": {
+    "output": "Result: 42\nExecution completed successfully",
+    "status": "success"
+  },
+  "code_execution_error": {
+    "output": "NameError: name 'undefined_variable' is not defined",
+    "status": "error"
+  },
+  "research_result": {
+    "output": "Research findings: Machine learning algorithms for time series include ARIMA, LSTM, and Prophet models.",
+    "status": "success"
+  },
+  "analysis_result": {
+    "output": "Analysis complete: Dataset contains 1000 records with mean=25.5 and standard deviation=12.3",
+    "status": "success"
+  },
+  "summary_result": {
+    "output": "Summary: The workflow completed successfully with all objectives met.",
+    "status": "success"
+  }
+}

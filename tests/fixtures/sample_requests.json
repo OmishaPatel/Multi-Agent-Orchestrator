@@ -1,0 +1,22 @@
+{
+  "simple_request": {
+    "user_request": "Calculate the sum of numbers 1 to 10",
+    "expected_tasks": ["calculation", "summary"]
+  },
+  "complex_request": {
+    "user_request": "Analyze a dataset, create visualizations, and provide statistical insights",
+    "expected_tasks": ["research", "code", "analysis", "summary"]
+  },
+  "research_request": {
+    "user_request": "Research machine learning algorithms for time series forecasting",
+    "expected_tasks": ["research", "analysis", "summary"]
+  },
+  "code_request": {
+    "user_request": "Write a Python function to calculate fibonacci numbers",
+    "expected_tasks": ["code", "summary"]
+  },
+  "multi_step_request": {
+    "user_request": "Create a data pipeline that reads CSV data, cleans it, performs analysis, and generates a report",
+    "expected_tasks": ["research", "code", "analysis", "summary"]
+  }
+}

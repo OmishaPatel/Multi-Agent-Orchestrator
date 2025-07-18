@@ -10,7 +10,7 @@ class BaseService:
         self.redis_client = redis_client
 
     async def get_state(self, thread_id:str) -> Optional[Dict[str, Any]]:
-                """
+        """
         Get workflow state from Redis.
         This is a placeholder that will be implemented in the state management task.
         """
