@@ -4,6 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes import health, workflow
 from src.config.settings import get_settings
+from src.utils.logging_config import setup_logging, get_logger
+
+# Initialize logging first
+logger = setup_logging()
 
 def create_application() -> FastAPI:
 

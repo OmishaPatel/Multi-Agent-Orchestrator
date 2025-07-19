@@ -101,6 +101,9 @@ class StateManager:
 
     @staticmethod
     def validate_state(state: AgentState) -> bool:
+        from src.utils.logging_config import get_state_logger
+        logger = get_state_logger()
+        
         try:
             # convert TypedDict to dict for Pydantic validation
             state_dict = dict(state)
@@ -108,9 +111,10 @@ class StateManager:
             state_dict.pop('messages', None)
 
             AgentStateValidator(**state_dict)
+            logger.debug("State validation successful")
             return True
         except Exception as e:
-            print(f"State validation eror: {e}")
+            logger.error(f"State validation error: {e}", exc_info=True)
             return False
 
     @staticmethod
