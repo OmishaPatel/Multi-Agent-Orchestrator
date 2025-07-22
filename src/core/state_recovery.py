@@ -31,9 +31,9 @@ class StateRecoveryManager:
 
             checkpoint, metadata = result
 
-            if 'agent_state' in checkpoint.channel_values:
-                state = checkpoint.channel_values['agent_state']
-                logger.info(f"Recovered state for thread {thread_id} from checkpoint {checkpoint.id}")
+            if 'agent_state' in checkpoint['channel_values']:
+                state = checkpoint['channel_values']['agent_state']
+                logger.info(f"Recovered state for thread {thread_id} from checkpoint {checkpoint['id']}")
                 return state
             
             logger.warning(f"No agent_state found in checkpoint for thread {thread_id}")
@@ -50,14 +50,16 @@ class StateRecoveryManager:
 
             for checkpoint, metadata in self.checkpoint_saver.list(config, limit=limit):
                 recovery_points.append({
-                    'checkpoint_id': checkpoint.id,
-                    'timestamp': checkpoint.ts,
-                    'step': metadata.step,
-                    'source': metadata.source,
-                    'created_at': datetime.fromtimestamp(checkpoint.ts, timezone.utc).isoformat()
+                    'checkpoint_id': checkpoint['id'],
+                    'timestamp': checkpoint['ts'],
+                    'step': metadata['step'],
+                    'source': metadata['source'],
+                    'created_at': datetime.fromtimestamp(checkpoint['ts'], timezone.utc).isoformat()
                 })
         except Exception as e:
             logger.error(f"Failed to list recovery points for thread {thread_id}: {e}")
+        
+        return recovery_points
 
     def rollback_to_point(self, thread_id: str, checkpoint_id: str) -> bool:
         try:
@@ -122,14 +124,18 @@ class StateRecoveryManager:
 
         try:
             thread_pattern = f"{self.checkpoint_saver.key_prefix}thread:*"
-            thread_keys = self.checkpoint_saver.redis.keys(thread_pattern)
+            # Use scan_iter for production-safe key iteration
+            thread_keys = list(self.checkpoint_saver.redis.scan_iter(match=thread_pattern))
 
             logger.info(f"Starting cleanup of {len(thread_keys)} threads older than {max_age_hours} hours")
 
             for thread_key in thread_keys:
                 try:
                     cleanup_stats["threads_scanned"] +=1
-                    thread_id = thread_key.split(":")[-1] # Exact thread_id from key
+                    # Ensure thread_key is a string (decode if bytes)
+                    if isinstance(thread_key, bytes):
+                        thread_key = thread_key.decode('utf-8')
+                    thread_id = thread_key.split(":")[-1] # Extract thread_id from key
 
                     # get all checkpoints for this thread
                     checkpoint_ids = self.checkpoint_saver.redis.zrange(thread_key, 0, -1)
@@ -233,14 +239,20 @@ class StateRecoveryManager:
         try:
             #count total threads
             thread_pattern = f"{self.checkpoint_saver.key_prefix}thread:*"
-            thread_keys = self.checkpoint_saver.redis.keys(thread_pattern)
+            thread_keys = list(self.checkpoint_saver.redis.scan_iter(match=thread_pattern))
 
             # count total checkpoints
             checkpoint_pattern = f"{self.checkpoint_saver.key_prefix}*"
-            all_keys = self.checkpoint_saver.redis.keys(checkpoint_pattern)
+            all_keys = list(self.checkpoint_saver.redis.scan_iter(match=checkpoint_pattern))
 
             # filter out thread index keys to get actual checkpoint keys
-            checkpoint_keys = [key for key in all_keys if ":thread:" not in key]
+            checkpoint_keys = []
+            for key in all_keys:
+                # Ensure key is a string (decode if bytes)
+                if isinstance(key, bytes):
+                    key = key.decode('utf-8')
+                if ":thread:" not in key:
+                    checkpoint_keys.append(key)
 
             # calculate storage usage
             total_memory_usage = 0
@@ -248,6 +260,10 @@ class StateRecoveryManager:
             newest_checkpoint = None
             for thread_key in thread_keys:
                 try:
+                    # Ensure thread_key is a string (decode if bytes)
+                    if isinstance(thread_key, bytes):
+                        thread_key = thread_key.decode('utf-8')
+                    
                     # Get timestamp range for this thread
                     timestamps = self.checkpoint_saver.redis.zrange(thread_key, 0, -1, withscores=True)
                     
@@ -293,7 +309,7 @@ class StateRecoveryManager:
         try:
             cutoff_timestamp = time.time() - (max_age_hours * 3600)
             thread_pattern = f"{self.checkpoint_saver.key_prefix}thread:*"
-            thread_keys = self.checkpoint_saver.redis.keys(thread_pattern)
+            thread_keys = list(self.checkpoint_saver.redis.scan_iter(match=thread_pattern))
             
             cleanup_candidates = 0
             
