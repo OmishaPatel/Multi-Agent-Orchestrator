@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Iterator
 from datetime import datetime, timezone
 import logging
 from langgraph.checkpoint.base import BaseCheckpointSaver, Checkpoint, CheckpointMetadata
-from langgraph.checkpoint.serde.base import SerializerProtocol
+from langgraph.checkpoint import SerializerProtocol
 from src.config.redis_config import redis_manager
 import redis
 
@@ -45,13 +45,13 @@ class RedisCheckpointSaver(BaseCheckpointSaver):
         try:
             # Try JSON first for better readability and debugging
             checkpoint_dict = {
-                'v': checkpoint.v,
-                'ts': checkpoint.ts,
-                'id': checkpoint.id,
-                'channel_values': checkpoint.channel_values,
-                'channel_versions': checkpoint.channel_versions,
-                'versions_seen': checkpoint.versions_seen,
-                'pending_sends': checkpoint.pending_sends
+                'v': checkpoint['v'],
+                'ts': checkpoint['ts'],
+                'id': checkpoint['id'],
+                'channel_values': checkpoint['channel_values'],
+                'channel_versions': checkpoint['channel_versions'],
+                'versions_seen': checkpoint['versions_seen'],
+                'pending_sends': checkpoint['pending_sends']
             }
             return json.dumps(checkpoint_dict, default=str)
         except (TypeError, ValueError):
@@ -92,20 +92,20 @@ class RedisCheckpointSaver(BaseCheckpointSaver):
             # Serialize checkpoint and metadata
             checkpoint_data = self._serialize_checkpoint(checkpoint)
             metadata_data = json.dumps({
-                'source': metadata.source,
-                'step': metadata.step,
-                'writes': metadata.writes,
+                'source': metadata['source'],
+                'step': metadata['step'],
+                'writes': metadata['writes'],
                 'created_at': datetime.now(timezone.utc).isoformat()
             })
             
             # Store checkpoint
-            checkpoint_key = self._make_key(thread_id, checkpoint.id)
+            checkpoint_key = self._make_key(thread_id, checkpoint['id'])
             pipe = self.redis.pipeline()
             pipe.hset(checkpoint_key, mapping={
                 'checkpoint': checkpoint_data,
                 'metadata': metadata_data,
                 'thread_id': thread_id,
-                'checkpoint_id': checkpoint.id,
+                'checkpoint_id': checkpoint['id'],
                 'created_at': datetime.now(timezone.utc).isoformat()
             })
             
@@ -115,17 +115,17 @@ class RedisCheckpointSaver(BaseCheckpointSaver):
             
             # Update thread index for listing checkpoints
             thread_key = self._make_thread_key(thread_id)
-            pipe.zadd(thread_key, {checkpoint.id: checkpoint.ts})
+            pipe.zadd(thread_key, {checkpoint['id']: checkpoint['ts']})
             
             if self.ttl_seconds:
                 pipe.expire(thread_key, self.ttl_seconds)
             
             pipe.execute()
             
-            logger.debug(f"Saved checkpoint {checkpoint.id} for thread {thread_id}")
+            logger.debug(f"Saved checkpoint {checkpoint['id']} for thread {thread_id}")
             
         except Exception as e:
-            logger.error(f"Failed to save checkpoint {checkpoint.id}: {e}")
+            logger.error(f"Failed to save checkpoint {checkpoint['id']}: {e}")
             raise
     
     def get_tuple(self, config: Dict[str, Any]) -> Optional[Tuple[Checkpoint, CheckpointMetadata]]:
@@ -163,7 +163,7 @@ class RedisCheckpointSaver(BaseCheckpointSaver):
                 writes=json.loads(data['metadata'])['writes']
             )
             
-            logger.debug(f"Retrieved checkpoint {checkpoint.id} for thread {thread_id}")
+            logger.debug(f"Retrieved checkpoint {checkpoint['id']} for thread {thread_id}")
             return (checkpoint, metadata)
             
         except Exception as e:
@@ -237,7 +237,7 @@ class RedisCheckpointSaver(BaseCheckpointSaver):
             # Get checkpoint timestamp
             checkpoint_data = self.redis.hgetall(checkpoint_key)
             checkpoint = self._deserialize_checkpoint(checkpoint_data['checkpoint'])
-            target_timestamp = checkpoint.ts
+            target_timestamp = checkpoint['ts']
             
             # Remove all checkpoints newer than target
             thread_key = self._make_thread_key(thread_id)
