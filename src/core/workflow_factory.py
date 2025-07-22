@@ -1,8 +1,9 @@
+from typing import Dict, Any
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolExecutor
-from src.core.redis_saver import RedisCheckpointSaver
+from src.config.redis_saver import RedisCheckpointSaver
 from src.core.state_recovery import StateRecoveryManager
-from src.core.state import AgentState
+from src.graph.state import AgentState
 import logging
 import uuid
 
@@ -79,7 +80,7 @@ class WorkflowFactory:
 
     def start_new_workflow(self, user_request:str, thread_id: str = None) -> Dict[str, Any]:
         if not thread_id:
-            thread_id = str(uuid.uuidv4())
+            thread_id = str(uuid.uuid4())
 
         workflow = self.create_workflow()
         config = {"configurable": {"thread_id": thread_id}}
