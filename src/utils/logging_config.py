@@ -100,10 +100,41 @@ class ClarityLogger:
     
     def _configure_component_loggers(self, environment: str):
         
-        # Framework loggers
+        # Get environment-specific log levels
+        quiet_terminal = os.getenv("QUIET_TERMINAL", "true").lower() == "true"
+        verbose_logging = os.getenv("VERBOSE_LOGGING", "false").lower() == "true"
+        
+        # Framework loggers - reduce noise significantly
         logging.getLogger("uvicorn").setLevel(logging.INFO)
-        logging.getLogger("uvicorn.access").setLevel(logging.WARNING if environment == "production" else logging.INFO)
+        
+        # Uvicorn access logs are very noisy - quiet them unless verbose mode
+        if verbose_logging:
+            logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+        else:
+            logging.getLogger("uvicorn.access").setLevel(logging.WARNING if environment == "production" else logging.ERROR)
+        
         logging.getLogger("fastapi").setLevel(logging.INFO)
+        
+        # Third-party libraries that generate excessive noise
+        noisy_libraries = {
+            "apscheduler": logging.ERROR if quiet_terminal else logging.INFO,
+            "apscheduler.scheduler": logging.ERROR if quiet_terminal else logging.INFO,
+            "apscheduler.executors": logging.ERROR if quiet_terminal else logging.INFO,
+            "apscheduler.executors.default": logging.ERROR if quiet_terminal else logging.INFO,
+            "watchfiles": logging.ERROR if quiet_terminal else logging.WARNING,
+            "watchfiles.main": logging.ERROR if quiet_terminal else logging.WARNING,
+            "tzlocal": logging.ERROR if quiet_terminal else logging.WARNING,
+        }
+        
+        # Apply quiet settings unless in verbose mode
+        if verbose_logging:
+            # In verbose mode, allow more detail but still reduce the noisiest ones
+            for logger_name in noisy_libraries:
+                logging.getLogger(logger_name).setLevel(logging.WARNING)
+        else:
+            # In quiet mode, suppress most third-party noise
+            for logger_name, level in noisy_libraries.items():
+                logging.getLogger(logger_name).setLevel(level)
         
         # LangChain/LangGraph loggers
         logging.getLogger("langchain").setLevel(logging.WARNING)

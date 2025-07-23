@@ -23,6 +23,18 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: Optional[str] = Field(None, description="Redis password")
 
     DEFAULT_MODEL: str = Field("phi3:mini", description="Default LLM model for development")
+    
+    # Cleanup service settings
+    CLEANUP_ENABLED: bool = Field(True, description="Enable background cleanup service")
+    CLEANUP_INTERVAL_HOURS: int = Field(6, description="Cleanup interval in hours")
+    CLEANUP_MAX_AGE_HOURS: int = Field(24, description="Maximum age before deletion in hours")
+
+    # Logging settings
+    LOG_LEVEL: str = Field("INFO", description="Default log level (DEBUG, INFO, WARNING, ERROR)")
+    QUIET_TERMINAL: bool = Field(True, description="Minimize logs in terminal")
+    VERBOSE_LOGGING: bool = Field(False, description="Set logging verbosity level")
+    CLEANUP_LOG_LEVEL: str = Field("WARNING", description="Log level for cleanup service")
+    ENABLE_FILE_LOGGING: bool = Field(True, description="Enable logging to files")
 
     model_config = SettingsConfigDict(
         env_file=".env",

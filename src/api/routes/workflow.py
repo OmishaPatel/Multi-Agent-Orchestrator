@@ -55,3 +55,7 @@ async def run_workflow(request: RunRequest):
             duration = time.time() - start_time
             log_api_request("POST", "/run", 500, duration, thread_id)
             raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/cleanup/status")
+async def get_cleanup_status():
+    return cleanup_service.get_status()
