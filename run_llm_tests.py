@@ -52,8 +52,8 @@ async def main():
         # Basic Ollama integration
         [sys.executable, "-m", "pytest", "test_ollama_integration.py", "-v"],
         
-        # Comprehensive LLM tests (skip HuggingFace if token issues)
-        [sys.executable, "-m", "pytest", "test_llm_integration.py", "-k", "not huggingface", "-v"],
+        # Comprehensive LLM tests (skip HuggingFace due to API limitations)
+        [sys.executable, "-m", "pytest", "test_llm_integration.py", "-v"],
     ]
     
     all_passed = True
