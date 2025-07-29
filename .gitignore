@@ -18,3 +18,7 @@ __pycache__/
 #scratch md files
 DEVELOPMENT_JOURNAL.md
 tests/README.md
+
+#uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+LLM_WRAPPERS_ARCHITECTURE.md
+README.md
