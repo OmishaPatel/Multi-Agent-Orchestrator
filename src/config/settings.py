@@ -36,6 +36,25 @@ class Settings(BaseSettings):
     CLEANUP_LOG_LEVEL: str = Field("WARNING", description="Log level for cleanup service")
     ENABLE_FILE_LOGGING: bool = Field(True, description="Enable logging to files")
 
+    # LLM Integration Configuration
+    HUGGINGFACE_API_TOKEN: str = Field("", description="Hugging Face API token")
+    
+    # Ollama Configuration
+    OLLAMA_BASE_URL: str = Field("http://localhost:11434", description="Ollama base URL")
+    TEST_OLLAMA: bool = Field(True, description="Enable Ollama testing")
+    
+    # vLLM Configuration
+    VLLM_BASE_URL: str = Field("http://localhost:8000", description="vLLM base URL")
+    VLLM_API_KEY: str = Field("dummy-key", description="vLLM API key")
+    TEST_VLLM: bool = Field(False, description="Enable vLLM testing")
+    
+    # Test Configuration
+    TEST_TIMEOUT: int = Field(60, description="Test timeout in seconds")
+
+    # Simple LLM Cache Configuration
+    LLM_CACHE_ENABLED: bool = Field(True, description="Enable basic LLM response caching")
+    LLM_CACHE_MAX_SIZE: int = Field(100, description="Maximum number of cached responses")
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

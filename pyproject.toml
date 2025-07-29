@@ -25,6 +25,8 @@ pydantic-settings = "^2.1.0"
 structlog = "^23.2.0"
 psutil = "^5.9.6"
 apscheduler = "^3.10.4"
+aiohttp = "^3.9.0"
+nest-asyncio = "^1.5.8"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -67,3 +69,10 @@ warn_unused_ignores = true
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
+asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "unit: marks tests as unit tests",
+    "slow: marks tests as slow running"
+]
+addopts = "-v --tb=short"
