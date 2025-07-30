@@ -43,23 +43,34 @@ class EnvironmentAwareModelConfig:
                 "resource_monitoring": True,
                 "max_concurrent": 2
             }
+        # elif self.environment == Environment.TESTING:
+        #     return {
+        #         "model_provider": "huggingface",
+        #         "models": {
+        #             "planning": "microsoft/DialoGPT-medium",
+        #             "research": "microsoft/DialoGPT-medium",
+        #             "code": "microsoft/DialoGPT-medium"
+        #         },
+        #         "fallback_enabled": True,
+        #         "api_key": os.getenv("HF_API_KEY")
+        #     }
         elif self.environment == Environment.TESTING:
             return {
-                "model_provider": "huggingface",
+                "model_provider": "openai",
                 "models": {
-                    "planning": "microsoft/DialoGPT-medium",
-                    "research": "microsoft/DialoGPT-medium",
-                    "code": "microsoft/DialoGPT-medium"
+                    "planning": "gpt-3.5-turbo",
+                    "research": "gpt-3.5-turbo",
+                    "code": "gpt-4o-mini"
                 },
                 "fallback_enabled": True,
-                "api_key": os.getenv("HF_API_KEY")
+                "api_key": os.getenv("OPENAI_API_KEY")
             }
         else: # production
             return {
                 "model_provider": "vllm",
                 "base_url": os.getenv("VLLM_BASE_URL", "http://localhost:8000"),
                 "models": {
-                    "planning": "llama3.1:8b",
+                    "planning": "deepseek-r1-distill-llama-8b",
                     "research": "mistral:7b",
                     "code": "codellama:7b"
                 },

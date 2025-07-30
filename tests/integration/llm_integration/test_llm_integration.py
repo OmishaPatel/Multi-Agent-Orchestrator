@@ -2,8 +2,9 @@ import pytest
 import os
 from dotenv import load_dotenv
 from src.core.llm_wrappers.llm_factory import LLMFactory, AgentType, ModelEnvironment
+from src.core.llm_wrappers.ollama_llm import OllamaLLM
+from typing import Optional, List, Any
 
-# Ensure .env file is loaded
 load_dotenv()
 
 @pytest.mark.integration
@@ -44,12 +45,59 @@ class TestLLMIntegration:
         assert metrics["error_count"] == 0
         assert metrics["average_latency"] > 0
     
+    # @pytest.mark.skipif(
+    #     not os.getenv("HUGGINGFACE_API_TOKEN"),
+    #     reason="Hugging Face API token not available"
+    # )
+    # async def test_huggingface_end_to_end(self):
+    #     """Test complete Hugging Face workflow"""
+    #     llm = LLMFactory.create_llm(
+    #         AgentType.PLANNING,
+    #         ModelEnvironment.TESTING,
+    #         max_tokens=50  # Keep response short for testing
+    #     )
+    #     
+    #     response = await llm._acall("What is the capital of France?")
+    #     
+    #     assert isinstance(response, str)
+    #     assert len(response) > 0
+    #     assert "paris" in response.lower()
+    #     
+    #     # Check metrics
+    #     metrics = llm.get_metrics()
+    #     assert metrics["total_calls"] == 1
+    #     assert metrics["successful_calls"] == 1
+    #     assert metrics["error_count"] == 0
+
+    # @pytest.mark.skipif(
+    #     not os.getenv("HUGGINGFACE_API_TOKEN"),
+    #     reason="Hugging Face API token not available"
+    # )
+    # async def test_huggingface_multiple_requests_stats(self):
+    #     """Test that multiple requests properly update statistics"""
+    #     llm = LLMFactory.create_llm(
+    #         AgentType.CODE,
+    #         ModelEnvironment.TESTING,
+    #         max_tokens=20  # Keep responses short
+    #     )
+    #     
+    #     # Make multiple requests
+    #     await llm._acall("Count to 3")
+    #     await llm._acall("What is 1+1?")
+    #     await llm._acall("Say hello")
+    #     
+    #     # Check base metrics
+    #     metrics = llm.get_metrics()
+    #     assert metrics["total_calls"] == 3
+    #     assert metrics["successful_calls"] == 3
+    #     assert metrics["error_count"] == 0
+
     @pytest.mark.skipif(
-        not os.getenv("HUGGINGFACE_API_TOKEN"),
-        reason="Hugging Face API token not available"
+        not os.getenv("OPENAI_API_KEY"),
+        reason="OpenAI API key not available"
     )
-    async def test_huggingface_end_to_end(self):
-        """Test complete Hugging Face workflow"""
+    async def test_openai_end_to_end(self):
+        """Test complete OpenAI workflow"""
         llm = LLMFactory.create_llm(
             AgentType.PLANNING,
             ModelEnvironment.TESTING,
@@ -67,12 +115,34 @@ class TestLLMIntegration:
         assert metrics["total_calls"] == 1
         assert metrics["successful_calls"] == 1
         assert metrics["error_count"] == 0
-    
+
+    @pytest.mark.skipif(
+        not os.getenv("OPENAI_API_KEY"),
+        reason="OpenAI API key not available"
+    )
+    async def test_openai_multiple_requests_stats(self):
+        """Test that multiple requests properly update statistics"""
+        llm = LLMFactory.create_llm(
+            AgentType.CODE,
+            ModelEnvironment.TESTING,
+            max_tokens=20  # Keep responses short
+        )
+        
+        # Make multiple requests
+        await llm._acall("Count to 3")
+        await llm._acall("What is 1+1?")
+        await llm._acall("Say hello")
+        
+        # Check base metrics
+        metrics = llm.get_metrics()
+        assert metrics["total_calls"] == 3
+        assert metrics["successful_calls"] == 3
+        assert metrics["error_count"] == 0
+
     @pytest.mark.asyncio
     async def test_retry_logic_integration(self):
         """Test retry logic with simulated failures using test subclass"""
-        from src.core.llm_wrappers.ollama_llm import OllamaLLM
-        from typing import Optional, List, Any
+
         
         class TestOllamaLLM(OllamaLLM):
             """Test subclass with controlled failure behavior"""
@@ -155,3 +225,52 @@ class TestLLMIntegration:
         
         metrics = llm.get_metrics()
         assert metrics["total_calls"] == 2  # Two unique API calls
+    
+    
+    # @pytest.mark.skipif(
+    #     not os.getenv("HUGGINGFACE_API_TOKEN"),
+    #     reason="Hugging Face API token not available"
+    # )
+    # async def test_huggingface_error_handling_integration(self):
+    #     """Test error handling with invalid model name"""
+    #     llm = LLMFactory.create_llm(
+    #         AgentType.PLANNING,
+    #         ModelEnvironment.TESTING
+    #     )
+    #     
+    #     # Override model name to something invalid
+    #     llm.model_name = "nonexistent/invalid-model"
+    #     
+    #     # This should fail with a clear error message
+    #     with pytest.raises(Exception) as exc_info:
+    #         await llm._acall("Test prompt")
+    #     
+    #     error_msg = str(exc_info.value)
+    #     # Should contain helpful error information
+    #     assert any(keyword in error_msg.lower() for keyword in [
+    #         "not found", "invalid", "error", "failed"
+    #     ])
+
+    @pytest.mark.skipif(
+        not os.getenv("OPENAI_API_KEY"),
+        reason="OpenAI API key not available"
+    )
+    async def test_openai_error_handling_integration(self):
+        """Test error handling with invalid model name"""
+        llm = LLMFactory.create_llm(
+            AgentType.PLANNING,
+            ModelEnvironment.TESTING
+        )
+        
+        # Override model name to something invalid
+        llm.model_name = "nonexistent-invalid-model"
+        
+        # This should fail with a clear error message
+        with pytest.raises(Exception) as exc_info:
+            await llm._acall("Test prompt")
+        
+        error_msg = str(exc_info.value)
+        # Should contain helpful error information
+        assert any(keyword in error_msg.lower() for keyword in [
+            "not found", "invalid", "error", "failed", "model"
+        ])

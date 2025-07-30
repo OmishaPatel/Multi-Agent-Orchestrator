@@ -11,6 +11,16 @@ except ImportError:
     HuggingFaceLLM = None
 
 try:
+    from .openai_llm import OpenAILLM
+except ImportError:
+    OpenAILLM = None
+
+try:
+    from .featherless_llm import FeatherlessLLM
+except ImportError:
+    FeatherlessLLM = None
+
+try:
     from .vllm_llm import vLLMLLM
 except ImportError:
     vLLMLLM = None
@@ -42,9 +52,9 @@ class LLMFactory:
             AgentType.CODE: {"model": "qwen2:0.5b", "wrapper": ThrottledOllamaLLM},
         },
         ModelEnvironment.TESTING: {
-            AgentType.PLANNING: {"model": "meta-llama/Llama-2-7b-chat-hf", "wrapper": HuggingFaceLLM},
-            AgentType.RESEARCH: {"model": "mistralai/Mistral-7B-Instruct-v0.1", "wrapper": HuggingFaceLLM},
-            AgentType.CODE: {"model": "codellama/CodeLlama-7b-Instruct-hf", "wrapper": HuggingFaceLLM},
+            AgentType.PLANNING: {"model": "gpt-3.5-turbo", "wrapper": OpenAILLM},
+            AgentType.RESEARCH: {"model": "gpt-3.5-turbo", "wrapper": OpenAILLM},
+            AgentType.CODE: {"model": "gpt-4o-mini", "wrapper": OpenAILLM},
         },
         ModelEnvironment.PRODUCTION: {
             AgentType.PLANNING: {"model": "meta-llama/Llama-2-7b-chat-hf", "wrapper": vLLMLLM},
@@ -128,9 +138,9 @@ class LLMFactory:
                 if isinstance(llm, (OllamaLLM, ThrottledOllamaLLM)):
                     available = await llm.check_model_availability()
                     results[agent_type.value] = {"available": available, "type": "ollama"}
-                elif HuggingFaceLLM and isinstance(llm, HuggingFaceLLM):
+                elif OpenAILLM and isinstance(llm, OpenAILLM):
                     info = await llm.get_model_info()
-                    results[agent_type.value] = {"info": info, "type": "huggingface"}
+                    results[agent_type.value] = {"info": info, "type": "openai"}
                 elif vLLMLLM and isinstance(llm, vLLMLLM):
                     health = await llm.check_server_health()
                     results[agent_type.value] = {"health": health, "type": "vllm"}
