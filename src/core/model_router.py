@@ -103,8 +103,8 @@ class EnvironmentAwareModelRouter:
 
         elif self.env_config.environment == Environment.TESTING:
             configs[Environment.TESTING] = ModelFallbackConfig(
-                primary_model="microsoft/DialoGPT-medium",
-                fallback_models=["microsoft/DialoGPT-small", "phi3:mini"],
+                primary_model="gpt-3.5-turbo",
+                fallback_models=["gpt-4o-mini"],
                 max_retries=3,
                 retry_delay=1.0
             )
