@@ -36,8 +36,8 @@ class EnvironmentAwareModelConfig:
                 "base_url": "http://localhost:11434",
                 "models": {
                     "planning": "phi3:mini",
-                    "research": "phi3:mini",
-                    "code": "phi3:mini"
+                    "research": "llama3.2:1b",
+                    "code": "qwen2:0.5b"
                 },
                 "fallback_enabled": True,
                 "resource_monitoring": True,
