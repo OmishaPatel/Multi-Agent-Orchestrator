@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from src.config.settings import Settings, get_settings
+from src.config.redis_config import get_redis_manager
 
 router = APIRouter(prefix="/health")
 
@@ -28,7 +29,10 @@ async def health_check(settings: Settings = Depends(get_settings)):
 
 @router.get("/status", response_model=StatusResponse)
 async def status_check(settings: Settings = Depends(get_settings)):
-    redis_connected = True
+    redis_manager = get_redis_manager()
+    redis_connected = await redis_manager.health_check()
+
+    overall_status = "ok" if redis_connected else "degraded"
 
     return{
         "status": "ok",
