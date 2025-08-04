@@ -1,10 +1,11 @@
 import docker
 import tempfile
 import os
+import time
 import logging
 import docker.errors
 from langchain_core.tools import Tool
-from typing import Optional
+from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,148 @@ class DockerCodeExecutor:
                 except Exception as e:
                     logger.warning(f"Failed to clean up temp file: {e}")
 
+class CodeInterpreter:
+    """
+    Code interpreter wrapper that provides a unified interface for code execution.
+    Handles both Docker-based secure execution and fallback options.
+    """
+    
+    def __init__(self):
+        self.docker_available = False
+        self.executor = None
+        self.fallback_tool = None
+        
+        try:
+            self.executor = DockerCodeExecutor()
+            self.docker_available = True
+            logger.info("CodeInterpreter initialized with Docker backend")
+        except RuntimeError as e:
+            logger.warning(f"Docker not available, using fallback: {e}")
+            try:
+                from langchain_experimental.tools import PythonREPLTool
+                self.fallback_tool = PythonREPLTool()
+                logger.info("CodeInterpreter initialized with Python REPL fallback")
+            except ImportError:
+                logger.error("No code execution backend available")
+                raise RuntimeError("No code execution backend available")
+    
+    def execute_code(self, code: str, timeout: int = 30, memory_limit: str = "256m", 
+                    network_disabled: bool = True, filesystem_readonly: bool = True) -> Dict[str, Any]:
+        """
+        Execute Python code with security constraints.
+        
+        Args:
+            code: Python code to execute
+            timeout: Execution timeout in seconds
+            memory_limit: Memory limit for execution
+            network_disabled: Whether to disable network access
+            filesystem_readonly: Whether filesystem should be read-only
+            
+        Returns:
+            Dictionary with execution results
+        """
+        if self.docker_available and self.executor:
+            return self._execute_with_docker(code, timeout, memory_limit)
+        elif self.fallback_tool:
+            return self._execute_with_fallback(code)
+        else:
+            return {
+                "success": False,
+                "output": "",
+                "error": "No code execution backend available",
+                "execution_time": 0
+            }
+    
+    def _execute_with_docker(self, code: str, timeout: int, memory_limit: str) -> Dict[str, Any]:
+        
+        start_time = time.time()
+        
+        try:
+            # Update executor settings
+            self.executor.timeout = timeout
+            self.executor.memory_limit = memory_limit
+            
+            # Execute code
+            output = self.executor.execute_python_code(code)
+            execution_time = time.time() - start_time
+            
+            # Check if execution was successful
+            success = not output.startswith("Error:") and not output.startswith("Execution Error:")
+            
+            return {
+                "success": success,
+                "output": output,
+                "error": "" if success else output,
+                "execution_time": execution_time,
+                "backend": "docker"
+            }
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            return {
+                "success": False,
+                "output": "",
+                "error": str(e),
+                "execution_time": execution_time,
+                "backend": "docker"
+            }
+    
+    def _execute_with_fallback(self, code: str) -> Dict[str, Any]:
+        
+        start_time = time.time()
+        
+        try:
+            output = self.fallback_tool.run(code)
+            execution_time = time.time() - start_time
+            
+            return {
+                "success": True,
+                "output": output,
+                "error": "",
+                "execution_time": execution_time,
+                "backend": "python_repl",
+                "warning": "Using insecure fallback - Docker not available"
+            }
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            return {
+                "success": False,
+                "output": "",
+                "error": str(e),
+                "execution_time": execution_time,
+                "backend": "python_repl"
+            }
+    
+    def is_docker_available(self) -> bool:
+        return self.docker_available
+    
+    def get_backend_info(self) -> Dict[str, Any]:
+        if self.docker_available:
+            return {
+                "backend": "docker",
+                "secure": True,
+                "isolated": True,
+                "network_disabled": True,
+                "memory_limited": True
+            }
+        elif self.fallback_tool:
+            return {
+                "backend": "python_repl",
+                "secure": False,
+                "isolated": False,
+                "network_disabled": False,
+                "memory_limited": False,
+                "warning": "Insecure fallback mode"
+            }
+        else:
+            return {
+                "backend": "none",
+                "available": False
+            }
+
+
+# Initialize global instances
 try:
     docker_executor = DockerCodeExecutor()
 
