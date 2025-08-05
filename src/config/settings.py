@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     
     # Ollama Configuration
     OLLAMA_BASE_URL: str = Field("http://localhost:11434", description="Ollama base URL")
+    OLLAMA_TIMEOUT: int = Field(60, description="Ollama request timeout in seconds")
     TEST_OLLAMA: bool = Field(True, description="Enable Ollama testing")
     
     # vLLM Configuration
@@ -54,6 +55,10 @@ class Settings(BaseSettings):
     # Simple LLM Cache Configuration
     LLM_CACHE_ENABLED: bool = Field(True, description="Enable basic LLM response caching")
     LLM_CACHE_MAX_SIZE: int = Field(100, description="Maximum number of cached responses")
+    
+    # Redis Configuration
+    REDIS_ENABLED: bool = Field(True, description="Enable Redis checkpointing (disable for local testing)")
+    ENABLE_CHECKPOINTING: bool = Field(True, description="Enable workflow checkpointing (uses memory if Redis disabled)")
 
     model_config = SettingsConfigDict(
         env_file=".env",
