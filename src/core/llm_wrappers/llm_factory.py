@@ -101,7 +101,7 @@ class LLMFactory:
         if environment == ModelEnvironment.DEVELOPMENT:
             return {
                 "max_retries": 2,
-                "timeout": 30.0,
+                "timeout": 90.0,  # Increased timeout for local Ollama models
                 "enable_caching": True,
             }
         elif environment == ModelEnvironment.TESTING:
@@ -139,8 +139,9 @@ class LLMFactory:
                     available = await llm.check_model_availability()
                     results[agent_type.value] = {"available": available, "type": "ollama"}
                 elif OpenAILLM and isinstance(llm, OpenAILLM):
-                    info = await llm.get_model_info()
-                    results[agent_type.value] = {"info": info, "type": "openai"}
+                    # OpenAI LLM doesn't have specific health check methods
+                    # We just verify it was created successfully
+                    results[agent_type.value] = {"status": "created", "type": "openai"}
                 elif vLLMLLM and isinstance(llm, vLLMLLM):
                     health = await llm.check_server_health()
                     results[agent_type.value] = {"health": health, "type": "vllm"}

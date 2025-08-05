@@ -1,6 +1,6 @@
 import aiohttp
 import json
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 from .base_llm import BaseLLMWrapper
 import logging
 
@@ -23,18 +23,21 @@ class OllamaLLM(BaseLLMWrapper):
         base_url: str = "http://localhost:11434",
         temperature: float = 0.7,
         max_tokens: int = 2048,
+        environment: str = "development",
+        timeout: float = 60.0,
         **kwargs
     ):
         # Filter out conflicting parameters
         filtered_kwargs = {k: v for k, v in kwargs.items() 
-                          if k not in ['base_url', 'temperature', 'max_tokens']}
+                          if k not in ['base_url', 'temperature', 'max_tokens', 'environment', 'timeout']}
         
         super().__init__(
             model_name=model_name,
-            environment="development",
+            environment=environment,
             base_url=base_url,
             temperature=temperature,
             max_tokens=max_tokens,
+            timeout=timeout,
             **filtered_kwargs
         )
         
@@ -118,3 +121,15 @@ class OllamaLLM(BaseLLMWrapper):
             logger.error(f"Failed to pull Ollama model {self.model_name}: {e}")
         
         return False
+    
+    async def _acall(
+        self,
+        prompt: str,
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> str:
+        """
+        Async call implementation - uses the base class implementation for retry logic and caching.
+        """
+        return await super()._acall(prompt, stop, run_manager, **kwargs)

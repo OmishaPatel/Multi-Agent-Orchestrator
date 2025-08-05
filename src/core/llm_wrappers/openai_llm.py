@@ -34,18 +34,21 @@ class OpenAILLM(BaseLLMWrapper):
             if not api_token:
                 raise ValueError("OpenAI API token is required")
         
+        # Get environment from kwargs or default to testing
+        environment = kwargs.get('environment', 'testing')
+        
         # Filter out conflicting parameters
         filtered_kwargs = {k: v for k, v in kwargs.items() 
-                          if k not in ['api_token', 'temperature', 'max_tokens', 'base_url', 'timeout']}
+                          if k not in ['api_token', 'temperature', 'max_tokens', 'base_url', 'timeout', 'request_timeout', 'environment']}
         
         super().__init__(
             model_name=model_name,
-            environment="testing",
+            environment=environment,
             api_token=api_token,
             temperature=temperature,
             max_tokens=max_tokens,
             base_url="https://api.openai.com/v1",
-            request_timeout=request_timeout,
+            timeout=request_timeout,  # Map request_timeout to timeout for base class
             **filtered_kwargs
         )
     
@@ -111,3 +114,15 @@ class OpenAILLM(BaseLLMWrapper):
             if "OpenAI" not in str(e):
                 raise Exception(f"OpenAI API call failed: {str(e)}")
             raise
+    
+    async def _acall(
+        self,
+        prompt: str,
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> str:
+        """
+        Async call implementation - uses the base class implementation for retry logic and caching.
+        """
+        return await super()._acall(prompt, stop, run_manager, **kwargs)

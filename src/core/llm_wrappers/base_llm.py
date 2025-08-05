@@ -10,6 +10,7 @@ import concurrent.futures
 import threading
 from dataclasses import dataclass
 import hashlib
+import nest_asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,6 @@ class LLMMetrics:
     cache_misses: int = 0
 
 class BaseLLMWrapper(LLM, ABC):
-    # Declare Pydantic fields
     model_name: str
     environment: str = "development"
     max_retries: int = 3
@@ -33,6 +33,7 @@ class BaseLLMWrapper(LLM, ABC):
     cache_max_size: int = 10
     metrics: LLMMetrics = None
     response_cache: Dict[str, str] = None
+
     """
     Simplified base class for LLM wrappers focusing on:
     - Retry logic with exponential backoff
@@ -66,6 +67,8 @@ class BaseLLMWrapper(LLM, ABC):
         
         if self.metrics is None:
             self.metrics = LLMMetrics()
+        
+
         self._initialize_cache()
 
     def _initialize_cache(self):
