@@ -25,7 +25,10 @@ class TestOllamaIntegration:
     @pytest.mark.asyncio
     async def test_ollama_basic_generation(self):
         """Test basic text generation with Ollama"""
-        llm = OllamaLLM(model_name="phi3:mini")
+        llm = OllamaLLM(
+            model_name="phi3:mini",
+            environment="development"
+        )
         
         # Check if model is available
         available = await llm.check_model_availability()
@@ -51,7 +54,10 @@ class TestOllamaIntegration:
     @pytest.mark.asyncio
     async def test_ollama_model_availability(self):
         """Test model availability checking"""
-        llm = OllamaLLM(model_name="phi3:mini")
+        llm = OllamaLLM(
+            model_name="phi3:mini",
+            environment="development"
+        )
         
         available = await llm.check_model_availability()
         assert isinstance(available, bool)
@@ -69,7 +75,10 @@ class TestOllamaIntegration:
     @pytest.mark.asyncio
     async def test_ollama_error_handling(self):
         """Test error handling with non-existent model"""
-        llm = OllamaLLM(model_name="nonexistent:model")
+        llm = OllamaLLM(
+            model_name="nonexistent:model",
+            environment="development"
+        )
         
         # This should fail gracefully
         with pytest.raises(Exception):

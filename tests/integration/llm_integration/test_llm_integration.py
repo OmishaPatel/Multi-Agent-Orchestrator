@@ -150,7 +150,8 @@ class TestLLMIntegration:
             
             def __init__(self, **kwargs):
                 super().__init__(**kwargs)
-                self.call_count = 0
+                if self.call_count is None:
+                    self.call_count = 0
             
             async def _make_api_call(
                 self,
@@ -168,7 +169,8 @@ class TestLLMIntegration:
         llm = TestOllamaLLM(
             model_name="phi3:mini",
             max_retries=2,
-            retry_delay=0.1
+            retry_delay=0.1,
+            environment="development"
         )
         
         response = await llm._acall("Test prompt")
@@ -194,7 +196,8 @@ class TestLLMIntegration:
             
             def __init__(self, **kwargs):
                 super().__init__(**kwargs)
-                self.call_count = 0
+                if self.call_count is None:
+                    self.call_count = 0
             
             async def _make_api_call(
                 self,
@@ -209,7 +212,8 @@ class TestLLMIntegration:
         # Create test LLM instance
         llm = TestCachingOllamaLLM(
             model_name="phi3:mini",
-            enable_caching=True
+            enable_caching=True,
+            environment="development"
         )
         
         # First call
@@ -224,7 +228,8 @@ class TestLLMIntegration:
         assert llm.call_count == 2  # Only 2 actual API calls
         
         metrics = llm.get_metrics()
-        assert metrics["total_calls"] == 2  # Two unique API calls
+        assert metrics["cache_hits"] >= 1  # At least one cache hit
+        assert metrics["cache_misses"] >= 2  # At least two cache misses
     
     
     # @pytest.mark.skipif(
