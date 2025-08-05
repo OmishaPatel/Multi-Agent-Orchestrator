@@ -5,7 +5,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from src.core.state_recovery import StateRecoveryManager
-from src.config.redis_saver import RedisCheckpointSaver
+from src.core.redis_state_manager import RedisStateManager
 from src.config.cleanup_config import CleanupConfig
 import atexit
 import threading
@@ -26,7 +26,8 @@ class BackgroundCleanupService:
         self.cleanup_interval_hours = self.config.cleanup_interval_hours
         self.max_age_hours = self.config.max_age_hours
         self.scheduler = BackgroundScheduler(daemon=True)
-        self.recovery_manager = StateRecoveryManager(RedisCheckpointSaver())
+        self.redis_state_manager = RedisStateManager()
+        self.recovery_manager = StateRecoveryManager(self.redis_state_manager)
         self.is_running = False
         self._cleanup_lock = threading.Lock()
         

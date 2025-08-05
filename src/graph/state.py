@@ -18,7 +18,7 @@ class AgentState(TypedDict):
     plan: List[SubTask]
     task_results: Dict[int, str]
     next_task_id: Optional[int]
-    messages: Annotated[list, add_messages]
+    messages: List[str]  # Simplified messages without reducer for Redis compatibility
     # human approval fields
     human_approval_status: str # 'pending', 'approved', 'rejected'
     user_feedback: Optional[str]
