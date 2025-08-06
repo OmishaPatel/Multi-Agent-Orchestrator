@@ -2,16 +2,18 @@ import uvicorn
 import logging
 import signal
 import sys
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from fastapi.responses import JSONResponse
 from src.api.routes import health, workflow
 from src.config.settings import get_settings
-from src.utils.logging_config import setup_logging, get_logger
+from src.utils.logging_config import setup_logging, get_service_logger
 from src.core.background_cleanup import cleanup_service
 
 # Initialize logging first
-logger = logging.getLogger(__name__)
+logger = get_service_logger("main")
+settings = get_settings()
 
 def signal_handler(signum, frame):
     """Handle shutdown signals gracefully"""
@@ -70,7 +72,20 @@ def create_application() -> FastAPI:
     application.include_router(health.router, tags=["health"])
     application.include_router(workflow.router, prefix="/api/v1", tags=["Workflow"])
 
+    @application.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception):
+        logger.error(f"Unhandled exception: {exc}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "Internal server error",
+                "details": str(exc) if settings.DEBUG else "An unexpected error occurred"
+        }
+    )
+
     return application
+
+
 
 app = create_application()
 
