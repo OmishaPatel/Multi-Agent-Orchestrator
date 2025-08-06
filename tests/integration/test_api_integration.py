@@ -69,7 +69,10 @@ class TestAPIIntegration:
                         "description": "Calculate sum of numbers 1 to 10",
                         "dependencies": [],
                         "status": TaskStatus.COMPLETED,
-                        "result": "Sum = 55"
+                        "result": "Sum = 55",
+                        "started_at": "2024-01-15T10:35:00Z",
+                        "completed_at": "2024-01-15T10:40:00Z"
+
                     },
                     {
                         "id": 2,
@@ -77,7 +80,10 @@ class TestAPIIntegration:
                         "description": "Summarize calculation results",
                         "dependencies": [1],
                         "status": TaskStatus.COMPLETED,
-                        "result": "The sum of numbers from 1 to 10 is 55"
+                        "result": "The sum of numbers from 1 to 10 is 55",
+                        "started_at": "2024-01-15T10:35:00Z",
+                        "completed_at": "2024-01-15T10:40:00Z"
+
                     }
                 ],
                 "task_results": {
@@ -106,7 +112,10 @@ class TestAPIIntegration:
                         "description": "Research dataset analysis techniques",
                         "dependencies": [],
                         "status": TaskStatus.PENDING,
-                        "result": None
+                        "result": None,
+                        "started_at": "2024-01-15T10:35:00Z",
+                        "completed_at": "2024-01-15T10:40:00Z"
+
                     },
                     {
                         "id": 2,
@@ -114,7 +123,10 @@ class TestAPIIntegration:
                         "description": "Create data visualization code",
                         "dependencies": [1],
                         "status": TaskStatus.PENDING,
-                        "result": None
+                        "result": None,
+                        "started_at": "2024-01-15T10:35:00Z",
+                        "completed_at": "2024-01-15T10:40:00Z"
+
                     },
                     {
                         "id": 3,
@@ -122,7 +134,10 @@ class TestAPIIntegration:
                         "description": "Analyze statistical insights",
                         "dependencies": [1, 2],
                         "status": TaskStatus.PENDING,
-                        "result": None
+                        "result": None,
+                        "started_at": "2024-01-15T10:35:00Z",
+                        "completed_at": "2024-01-15T10:40:00Z"
+
                     }
                 ],
                 "task_results": {},
@@ -148,7 +163,10 @@ class TestAPIIntegration:
                         "description": "Research dataset analysis techniques",
                         "dependencies": [],
                         "status": TaskStatus.COMPLETED,
-                        "result": "Research completed successfully"
+                        "result": "Research completed successfully",
+                        "started_at": "2024-01-15T10:35:00Z",
+                        "completed_at": "2024-01-15T10:40:00Z"
+
                     },
                     {
                         "id": 2,
@@ -156,7 +174,10 @@ class TestAPIIntegration:
                         "description": "Create data visualization code",
                         "dependencies": [1],
                         "status": TaskStatus.IN_PROGRESS,
-                        "result": None
+                        "result": None,
+                        "started_at": "2024-01-15T10:35:00Z",
+                        "completed_at": "2024-01-15T10:40:00Z"
+
                     },
                     {
                         "id": 3,
@@ -164,7 +185,10 @@ class TestAPIIntegration:
                         "description": "Analyze statistical insights",
                         "dependencies": [1, 2],
                         "status": TaskStatus.PENDING,
-                        "result": None
+                        "result": None,
+                        "started_at": "2024-01-15T10:35:00Z",
+                        "completed_at": "2024-01-15T10:40:00Z"
+
                     }
                 ],
                 "task_results": {

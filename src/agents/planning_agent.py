@@ -91,7 +91,9 @@ class PlanningAgent:
                 description=description,
                 dependencies=[] if i == 1 else [i-1],
                 status=TaskStatus.PENDING,
-                result=None
+                result=None,
+                started_at=None,
+                completed_at=None
             ))
         
         return tasks
@@ -242,7 +244,9 @@ class PlanningAgent:
                 description=task_data['description'],
                 dependencies=dependencies,
                 status=TaskStatus.PENDING,
-                result=None
+                result=None,
+                started_at=None,
+                completed_at=None
             )
             
             plan.append(subtask)
@@ -303,7 +307,9 @@ class PlanningAgent:
             description=description,
             dependencies=[],
             status=TaskStatus.PENDING,
-            result=None
+            result=None,
+            started_at=None,
+            completed_at=None
         )
         
         return [fallback_task]
@@ -360,7 +366,9 @@ class PlanningAgent:
                 description=f"Research and gather information about: {user_request}",
                 dependencies=[],
                 status=TaskStatus.PENDING,
-                result=None
+                result=None,
+                started_at=None,
+                completed_at=None
             )
         ]
         
@@ -372,7 +380,9 @@ class PlanningAgent:
                     description=f"Perform computational analysis for: {user_request}",
                     dependencies=[1],
                     status=TaskStatus.PENDING,
-                    result=None
+                    result=None,
+                    started_at=None,
+                    completed_at=None
                 )
             )
         

@@ -1,7 +1,7 @@
 from typing import Dict, Any, List, Literal
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolExecutor
-from src.graph.state import AgentState, SubTask, TaskType, TaskStatus, ApprovalStatus
+from src.graph.state import AgentState, SubTask, TaskType, TaskStatus, ApprovalStatus, TimestampUtils
 from src.agents.planning_agent import PlanningAgent
 from src.agents.research_agent import ResearchAgent
 from src.agents.code_agent import CodeAgent
@@ -155,7 +155,7 @@ class IntelligentWorkflowGraph:
             # Update task status
             for task in new_state['plan']:
                 if task['id'] == next_task_id:
-                    task['status'] = TaskStatus.IN_PROGRESS
+                    TimestampUtils.set_task_started(task)
                     logger.info(f"Selected task {next_task_id}: {task['description']}")
                     break
             
@@ -191,8 +191,7 @@ class IntelligentWorkflowGraph:
             # Update task status
             for task in new_state['plan']:
                 if task['id'] == current_task['id']:
-                    task['status'] = TaskStatus.COMPLETED
-                    task['result'] = result
+                    TimestampUtils.set_task_completed(task, result)
                     break
             
             log_state_transition("research_execution", "task_completed", thread_id)
@@ -230,8 +229,7 @@ class IntelligentWorkflowGraph:
             # Update task status
             for task in new_state['plan']:
                 if task['id'] == current_task['id']:
-                    task['status'] = TaskStatus.COMPLETED
-                    task['result'] = result
+                    TimestampUtils.set_task_completed(task, result)
                     break
             
             log_state_transition("code_execution", "task_completed", thread_id)
@@ -369,8 +367,7 @@ class IntelligentWorkflowGraph:
         new_state = state.copy()
         for task in new_state['plan']:
             if task['id'] == current_task['id']:
-                task['status'] = TaskStatus.FAILED
-                task['result'] = f"Task failed: {error_message}"
+                TimestampUtils.set_task_failed(task, error_message)
                 break
         
         return new_state

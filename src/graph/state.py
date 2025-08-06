@@ -11,7 +11,8 @@ class SubTask(TypedDict):
     dependencies: List[int]
     status: str # 'pending', 'in_progress', 'completed', 'failed'
     result: Optional[str]
-
+    started_at: Optional[str]
+    completed_at: Optional[str]
 # main state dictionary to be passed between nodes
 class AgentState(TypedDict):
     user_request: str
@@ -60,6 +61,13 @@ class AgentStateValidator(BaseModel):
             if task['status'] not in valid_statuses:
                 raise ValueError(f"Invalid task status: {task['status']}. Must be one of {valid_statuses}")
 
+            # validate timestamps fields if present
+            for timestamp_field in ['started_at', 'completed_at']:
+                if timestamp_field in task and task[timestamp_field] is not None:
+                    try:
+                        datetime.fromisoformat(task[timestamp_field].replace('Z', '+00:00'))
+                    except ValueError:
+                        raise ValueError(f"Task {task['id']} has invalid {timestamp_field} format. Must be ISO format.")
             for dep_id in task['dependencies']:
                 if dep_id not in task_ids:
                     raise ValueError(f"Task {task['id']} has invalid dependency: {dep_id}")
@@ -184,5 +192,49 @@ class TaskType:
     ANALYSIS = 'analysis'
     SUMMARY = 'summary'
     CALCULATION = 'calculation'
+
+
+class TimestampUtils:
+
+    @staticmethod
+    def get_current_timestamp() ->str:
+        return datetime.utcnow().isoformat() + 'Z'
+
+    @staticmethod
+    def set_task_started(task: SubTask) -> SubTask:
+        task['started_at'] = TimestampUtils.get_current_timestamp()
+        task['status'] = TaskStatus.IN_PROGRESS
+        return task
+
+    @staticmethod
+    def set_task_completed(task: SubTask, result: str = None) -> SubTask:
+        task['completed_at'] = TimestampUtils.get_current_timestamp()
+        task['status'] = TaskStatus.COMPLETED
+
+        if result:
+            task['result'] = result
+        return task
+
+    @staticmethod
+    def set_task_failed(task: SubTask, error_message: str =None) -> SubTask:
+        task['completed_at'] = TimestampUtils.get_current_timestamp()
+        task['status'] = TaskStatus.FAILED
+        if error_message:
+            task['result'] = f"Error: {error_message}"
+        return task
+
+    @staticmethod
+    def calculate_task_duration(task: SubTask) -> Optional[int]:
+        if not task.get('started_at') or not task.get('completed_at'):
+            return None
+        
+        try:
+            start = datetime.fromisoformat(task['started_at'].replace('Z', '+00:00'))
+            end = datetime.fromisoformat(task['completed_at'].replace('Z', '+00:00'))
+            return int((end - start).total_seconds())
+        except (ValueError, KeyError):
+            return None
+
+
 
 

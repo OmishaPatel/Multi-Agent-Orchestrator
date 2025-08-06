@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List
 from src.config.settings import get_settings
 from src.utils.logging_config import get_api_logger, RequestLogger, log_api_request
-from src.graph.state import AgentState, StateManager, TaskStatus, ApprovalStatus
+from src.graph.state import AgentState, SubTask, TaskType,StateManager, TaskStatus, ApprovalStatus, TimestampUtils
 
 router = APIRouter()
 logger = get_api_logger("workflow")
@@ -133,7 +133,6 @@ class WorkflowStatusResponse(BaseModel):
             }
         }
 
-# New models for status endpoint
 class TaskInfo(BaseModel):
     id: int = Field(..., description="Task identifier")
     type: str = Field(..., description="Task type (research, code, analysis, summary, calculation)")
@@ -389,6 +388,18 @@ async def get_workflow_status(
             detail=f"Failed to retrieve workflow status: {str(e)}"
         )
 
+
+def _parse_timestamp(timestamp_str: Optional[str]) -> Optional[datetime]:
+    if not timestamp_str:
+        return None
+    try:
+        from datetime import datetime
+        # Handle both 'Z' and '+00:00' timezone formats
+        clean_timestamp = timestamp_str.replace('Z', '+00:00')
+        return datetime.fromisoformat(clean_timestamp)
+    except (ValueError, AttributeError):
+        return None
+
 def _build_status_response(thread_id: str, status_data: Dict[str, Any], checkpointing_type: str) -> WorkflowStatusResponse:
     """
     Build comprehensive status response from workflow status data.
@@ -419,10 +430,8 @@ def _build_status_response(thread_id: str, status_data: Dict[str, Any], checkpoi
             status=task["status"],
             dependencies=task.get("dependencies", []),
             result=task_results.get(task["id"]),
-            # Note: started_at and completed_at would need to be tracked in the workflow
-            # For now, we'll leave them as None
-            started_at=None,
-            completed_at=None
+            started_at=_parse_timestamp(task.get("started_at")),
+            completed_at=_parse_timestamp(task.get("completed_at"))
         )
         tasks.append(task_info)
         
@@ -477,7 +486,7 @@ def _calculate_progress_metrics(plan: List[Dict[str, Any]]) -> ProgressInfo:
     
     # Simple estimation
     remaining_tasks = pending_tasks + in_progress_tasks
-    estimated_remaining_time = remaining_tasks * 60 if remaining_tasks > 0 else None
+    estimated_remaining_time = _estimate_remaining_time(plan)
     
     return ProgressInfo(
         total_tasks=total_tasks,
@@ -489,6 +498,28 @@ def _calculate_progress_metrics(plan: List[Dict[str, Any]]) -> ProgressInfo:
         estimated_remaining_time=estimated_remaining_time
     )
 
+def _estimate_remaining_time(plan: List[Dict[str, Any]]) -> Optional[int]:
+    completed_durations = []
+    for task in plan:
+        if task["status"] == TaskStatus.COMPLETED:
+            duration = TimestampUtils.calculate_task_duration(task)
+            if duration:
+                completed_durations.append(duration)
+    
+    if not completed_durations:
+        # No completed tasks yet, use default estimate
+        remaining_tasks = len([t for t in plan if t["status"] in [TaskStatus.PENDING, TaskStatus.IN_PROGRESS]])
+        return remaining_tasks * 60  # 60 seconds per task default
+    
+    # Use average of completed tasks
+    avg_duration = sum(completed_durations) / len(completed_durations)
+    remaining_tasks = len([t for t in plan if t["status"] == TaskStatus.PENDING])
+    
+    # Add time for in-progress tasks (assume half remaining)
+    in_progress_tasks = len([t for t in plan if t["status"] == TaskStatus.IN_PROGRESS])
+    
+    return int(remaining_tasks * avg_duration + in_progress_tasks * avg_duration * 0.5)
+    
 def _determine_overall_status(
     human_approval_status: str, 
     plan: List[Dict[str, Any]], 
@@ -571,6 +602,3 @@ async def execute_workflow_background(
                 
         except Exception as save_e:
             logger.error(f"Failed to save error state for {thread_id}: {save_e}")
-
-
-# Note: cleanup_service endpoint removed as it's not implemented yet
