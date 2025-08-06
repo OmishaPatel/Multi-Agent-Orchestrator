@@ -88,10 +88,24 @@ class RedisStateManager:
             key = self._make_key(thread_id)
             data = self.redis.hgetall(key)
             
-            if not data or 'state' not in data:
+            if not data:
                 return None
             
-            state = self._deserialize_state(data['state'])
+            # Handle both byte and string keys from Redis
+            state_data = None
+            if b'state' in data:
+                state_data = data[b'state']
+            elif 'state' in data:
+                state_data = data['state']
+            
+            if not state_data:
+                return None
+            
+            # Decode bytes to string if necessary
+            if isinstance(state_data, bytes):
+                state_data = state_data.decode('utf-8')
+            
+            state = self._deserialize_state(state_data)
             logger.debug(f"Retrieved state for thread {thread_id}")
             return state
             
