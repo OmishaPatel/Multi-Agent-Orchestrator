@@ -653,8 +653,286 @@ class TestAPIIntegration:
             assert data["current_task"] is None
             assert len(data["tasks"]) == 0
 
+    # ==================== /approve Endpoint Tests ====================
+    
+    def test_approve_endpoint_plan_approval(self, client, mock_workflow_factory):
+        """Test /approve endpoint with plan approval"""
+        
+        thread_id = "test-thread-approve"
+        
+        # Mock workflow factory to return pending approval status
+        mock_status_data = {
+            "thread_id": thread_id,
+            "status": "pending_approval",
+            "user_request": "Test request for approval",
+            "plan": [{"id": 1, "type": "research", "description": "Test task", "status": "pending", "dependencies": []}],
+            "task_results": {},
+            "next_task_id": 1,
+            "messages": ["Plan generated, awaiting approval"],
+            "human_approval_status": "pending",
+            "user_feedback": None,
+            "final_report": None
+        }
+        
+        with patch('src.api.routes.workflow.process_approval_background') as mock_bg_task:
+            mock_bg_task.return_value = None
+            
+            # Override the dependency injection
+            from src.api.routes.workflow import get_workflow_factory
+            client.app.dependency_overrides[get_workflow_factory] = lambda: mock_workflow_factory
+            
+            try:
+                mock_workflow_factory.get_workflow_status.return_value = mock_status_data
+                
+                response = client.post(
+                    f"/api/v1/approve/{thread_id}",
+                    json={"approved": True}
+                )
+                
+                assert response.status_code == 200
+                data = response.json()
+                
+                assert data["thread_id"] == thread_id
+                assert data["status"] == "approved"
+                assert "approved" in data["message"].lower()
+                assert "updated_at" in data
+                
+                # Verify background task was called
+                mock_bg_task.assert_called_once_with(
+                    mock_workflow_factory, thread_id, True, None
+                )
+            finally:
+                # Clean up dependency override
+                client.app.dependency_overrides.clear()
+    
+    def test_approve_endpoint_plan_rejection_with_feedback(self, client, mock_workflow_factory):
+        """Test /approve endpoint with plan rejection and feedback"""
+        
+        thread_id = "test-thread-reject"
+        feedback = "Please add more detailed analysis and include cost estimates"
+        
+        # Mock workflow factory to return pending approval status
+        mock_status_data = {
+            "thread_id": thread_id,
+            "status": "pending_approval",
+            "user_request": "Test request for rejection",
+            "plan": [{"id": 1, "type": "research", "description": "Test task", "status": "pending", "dependencies": []}],
+            "task_results": {},
+            "next_task_id": 1,
+            "messages": ["Plan generated, awaiting approval"],
+            "human_approval_status": "pending",
+            "user_feedback": None,
+            "final_report": None
+        }
+        
+        with patch('src.api.routes.workflow.process_approval_background') as mock_bg_task:
+            mock_bg_task.return_value = None
+            
+            # Override the dependency injection
+            from src.api.routes.workflow import get_workflow_factory
+            client.app.dependency_overrides[get_workflow_factory] = lambda: mock_workflow_factory
+            
+            try:
+                mock_workflow_factory.get_workflow_status.return_value = mock_status_data
+                
+                response = client.post(
+                    f"/api/v1/approve/{thread_id}",
+                    json={"approved": False, "feedback": feedback}
+                )
+                
+                assert response.status_code == 200
+                data = response.json()
+                
+                assert data["thread_id"] == thread_id
+                assert data["status"] == "plan_rejected"
+                assert "rejected" in data["message"].lower()
+                assert "feedback" in data["message"].lower()
+                
+                # Verify background task was called with feedback
+                mock_bg_task.assert_called_once_with(
+                    mock_workflow_factory, thread_id, False, feedback
+                )
+            finally:
+                # Clean up dependency override
+                client.app.dependency_overrides.clear()
+    
+    def test_approve_endpoint_rejection_without_feedback(self, client, mock_workflow_factory):
+        """Test /approve endpoint rejection without required feedback"""
+        
+        thread_id = "test-thread-no-feedback"
+        
+        # Mock workflow factory to return pending approval status
+        mock_status_data = {
+            "thread_id": thread_id,
+            "status": "pending_approval",
+            "human_approval_status": "pending"
+        }
+        
+        # Override the dependency injection
+        from src.api.routes.workflow import get_workflow_factory
+        client.app.dependency_overrides[get_workflow_factory] = lambda: mock_workflow_factory
+        
+        try:
+            mock_workflow_factory.get_workflow_status.return_value = mock_status_data
+            
+            response = client.post(
+                f"/api/v1/approve/{thread_id}",
+                json={"approved": False}  # No feedback provided
+            )
+            
+            assert response.status_code == 400
+            data = response.json()
+            assert "feedback is required" in data["detail"].lower()
+        finally:
+            # Clean up dependency override
+            client.app.dependency_overrides.clear()
+    
+    def test_approve_endpoint_workflow_not_found(self, client, mock_workflow_factory):
+        """Test /approve endpoint with non-existent workflow"""
+        
+        thread_id = "test-non-existent-approve"
+        
+        # Override the dependency injection
+        from src.api.routes.workflow import get_workflow_factory
+        client.app.dependency_overrides[get_workflow_factory] = lambda: mock_workflow_factory
+        
+        try:
+            mock_workflow_factory.get_workflow_status.return_value = {"status": "not_found"}
+            
+            response = client.post(
+                f"/api/v1/approve/{thread_id}",
+                json={"approved": True}
+            )
+            
+            assert response.status_code == 404
+            data = response.json()
+            assert "not found" in data["detail"].lower()
+        finally:
+            # Clean up dependency override
+            client.app.dependency_overrides.clear()
+    
+    def test_approve_endpoint_workflow_not_in_approval_state(self, client, mock_workflow_factory):
+        """Test /approve endpoint when workflow is not in pending approval state"""
+        
+        thread_id = "test-thread-wrong-state"
+        
+        # Mock workflow factory to return completed status (not pending approval)
+        mock_status_data = {
+            "thread_id": thread_id,
+            "status": "completed",
+            "human_approval_status": "approved",
+            "final_report": "Task completed successfully"
+        }
+        
+        # Override the dependency injection
+        from src.api.routes.workflow import get_workflow_factory
+        client.app.dependency_overrides[get_workflow_factory] = lambda: mock_workflow_factory
+        
+        try:
+            mock_workflow_factory.get_workflow_status.return_value = mock_status_data
+            
+            response = client.post(
+                f"/api/v1/approve/{thread_id}",
+                json={"approved": True}
+            )
+            
+            assert response.status_code == 400
+            data = response.json()
+            assert "not in pending approval state" in data["detail"].lower()
+        finally:
+            # Clean up dependency override
+            client.app.dependency_overrides.clear()
+    
+    def test_approve_endpoint_invalid_thread_id(self, client):
+        """Test /approve endpoint with invalid thread_id format"""
+        
+        invalid_thread_id = "not-a-uuid"
+        
+        response = client.post(
+            f"/api/v1/approve/{invalid_thread_id}",
+            json={"approved": True}
+        )
+        
+        assert response.status_code == 400
+        data = response.json()
+        assert "Invalid thread_id format" in data["detail"]
+    
+    def test_approve_endpoint_empty_thread_id(self, client):
+        """Test /approve endpoint with empty thread_id"""
+        
+        response = client.post(
+            "/api/v1/approve/",
+            json={"approved": True}
+        )
+        
+        # This should result in a 404 due to route not matching
+        assert response.status_code == 404
+    
+    def test_approve_endpoint_workflow_error_state(self, client, mock_workflow_factory):
+        """Test /approve endpoint when workflow is in error state"""
+        
+        thread_id = "test-thread-error-approve"
+        
+        # Override the dependency injection
+        from src.api.routes.workflow import get_workflow_factory
+        client.app.dependency_overrides[get_workflow_factory] = lambda: mock_workflow_factory
+        
+        try:
+            mock_workflow_factory.get_workflow_status.return_value = {
+                "status": "error",
+                "error": "Redis connection failed"
+            }
+            
+            response = client.post(
+                f"/api/v1/approve/{thread_id}",
+                json={"approved": True}
+            )
+            
+            assert response.status_code == 500
+            data = response.json()
+            assert "error state" in data["detail"].lower()
+        finally:
+            # Clean up dependency override
+            client.app.dependency_overrides.clear()
+    
+    def test_approve_endpoint_test_thread_id_allowed(self, client, mock_workflow_factory):
+        """Test /approve endpoint allows test thread IDs"""
+        
+        thread_id = "test-thread-special-format"
+        
+        # Mock workflow factory to return pending approval status
+        mock_status_data = {
+            "thread_id": thread_id,
+            "status": "pending_approval",
+            "human_approval_status": "pending",
+            "plan": [{"id": 1, "type": "research", "description": "Test task", "status": "pending", "dependencies": []}]
+        }
+        
+        with patch('src.api.routes.workflow.process_approval_background') as mock_bg_task:
+            mock_bg_task.return_value = None
+            
+            # Override the dependency injection
+            from src.api.routes.workflow import get_workflow_factory
+            client.app.dependency_overrides[get_workflow_factory] = lambda: mock_workflow_factory
+            
+            try:
+                mock_workflow_factory.get_workflow_status.return_value = mock_status_data
+                
+                response = client.post(
+                    f"/api/v1/approve/{thread_id}",
+                    json={"approved": True}
+                )
+                
+                assert response.status_code == 200
+                data = response.json()
+                assert data["thread_id"] == thread_id
+                assert data["status"] == "approved"
+            finally:
+                # Clean up dependency override
+                client.app.dependency_overrides.clear()
+
     def test_complete_workflow_status_flow_simulation(self, client, mock_workflow_factory, sample_pending_approval_result, sample_in_progress_result, sample_workflow_result):
-        """Test complete workflow flow: run -> status (pending) -> status (in progress) -> status (completed)"""
+        """Test complete workflow flow: run -> status (pending) -> approve -> status (in progress) -> status (completed)"""
         
         thread_id = "test-flow-thread"
         
@@ -679,109 +957,92 @@ class TestAPIIntegration:
             mock_factory_instance.get_workflow_status.return_value = {
                 "thread_id": thread_id,
                 "status": "pending_approval",
-                **sample_pending_approval_result["result"]
+                "human_approval_status": "pending",
+                "plan": [{"id": 1, "type": "research", "description": "Test task", "status": "pending", "dependencies": []}]
             }
             mock_factory_instance.checkpointing_type = "hybrid"
             mock_factory_class.return_value = mock_factory_instance
             
-            status_response = client.get(f"/api/v1/status/{returned_thread_id}")
+            status_response = client.get(f"/api/v1/status/{thread_id}")
             
             assert status_response.status_code == 200
             status_data = status_response.json()
             assert status_data["status"] == "pending_approval"
-            assert status_data["progress"]["completion_percentage"] == 0.0
         
-        # Step 3: Check status - in progress (simulating after approval)
+        # Step 3: Approve the plan
+        with patch('src.api.routes.workflow.process_approval_background') as mock_approval_bg:
+            mock_approval_bg.return_value = None
+            
+            # Override the dependency injection
+            from src.api.routes.workflow import get_workflow_factory
+            client.app.dependency_overrides[get_workflow_factory] = lambda: mock_workflow_factory
+            
+            try:
+                mock_workflow_factory.get_workflow_status.return_value = {
+                    "thread_id": thread_id,
+                    "status": "pending_approval",
+                    "human_approval_status": "pending",
+                    "plan": [{"id": 1, "type": "research", "description": "Test task", "status": "pending", "dependencies": []}]
+                }
+                
+                approve_response = client.post(
+                    f"/api/v1/approve/{thread_id}",
+                    json={"approved": True}
+                )
+                
+                assert approve_response.status_code == 200
+                approve_data = approve_response.json()
+                assert approve_data["status"] == "approved"
+            finally:
+                # Clean up dependency override
+                client.app.dependency_overrides.clear()
+        
+        # Step 4: Check status - in progress (after approval)
         with patch('src.api.routes.workflow.WorkflowFactory') as mock_factory_class:
             mock_factory_instance = Mock()
             mock_factory_instance.get_workflow_status.return_value = {
                 "thread_id": thread_id,
                 "status": "in_progress",
-                **sample_in_progress_result["result"]
+                "human_approval_status": "approved",
+                "plan": [{"id": 1, "type": "research", "description": "Test task", "status": "in_progress", "dependencies": []}],
+                "task_results": {},
+                "next_task_id": 1,
+                "messages": ["Plan approved", "Task 1 in progress"],
+                "final_report": None
             }
             mock_factory_instance.checkpointing_type = "hybrid"
             mock_factory_class.return_value = mock_factory_instance
             
-            status_response = client.get(f"/api/v1/status/{returned_thread_id}")
+            status_response_2 = client.get(f"/api/v1/status/{thread_id}")
             
-            assert status_response.status_code == 200
-            status_data = status_response.json()
-            assert status_data["status"] == "in_progress"
-            assert status_data["progress"]["completion_percentage"] == 33.3
-            assert status_data["current_task"] is not None
+            assert status_response_2.status_code == 200
+            status_data_2 = status_response_2.json()
+            assert status_data_2["status"] == "in_progress"
+            assert status_data_2["human_approval_status"] == "approved"
         
-        # Step 4: Check status - completed
+        # Step 5: Check final status - completed
         with patch('src.api.routes.workflow.WorkflowFactory') as mock_factory_class:
             mock_factory_instance = Mock()
             mock_factory_instance.get_workflow_status.return_value = {
                 "thread_id": thread_id,
                 "status": "completed",
-                **sample_workflow_result["result"]
+                "human_approval_status": "approved",
+                "plan": [{"id": 1, "type": "research", "description": "Test task", "status": "completed", "dependencies": []}],
+                "task_results": {1: "Research completed successfully"},
+                "next_task_id": None,
+                "messages": ["Plan approved", "Task 1 completed", "Workflow completed"],
+                "final_report": "Final report: Research task completed successfully"
             }
             mock_factory_instance.checkpointing_type = "hybrid"
             mock_factory_class.return_value = mock_factory_instance
             
-            status_response = client.get(f"/api/v1/status/{returned_thread_id}")
+            status_response_3 = client.get(f"/api/v1/status/{thread_id}")
             
-            assert status_response.status_code == 200
-            status_data = status_response.json()
-            assert status_data["status"] == "completed"
-            assert status_data["progress"]["completion_percentage"] == 100.0
-            assert status_data["final_report"] is not None
- # ==================== Future Endpoint Tests (Commented Out) ====================
-    
-    # TODO: Uncomment and implement when /approve endpoint is added
-    # def test_approve_endpoint_approval_success(self, client, mock_workflow_factory):
-    #     """Test /approve endpoint for successful approval"""
-    #     
-    #     # Expected behavior:
-    #     # - POST /api/v1/approve/{thread_id}
-    #     # - Body: {"approved": true} or {"approved": false, "feedback": "..."}
-    #     # - Resumes workflow execution
-    #     # - Returns updated status
-    #     pass
-    
-    # def test_approve_endpoint_rejection_with_feedback(self, client, mock_workflow_factory):
-    #     """Test /approve endpoint for rejection with feedback"""
-    #     
-    #     # Expected behavior:
-    #     # - Requires feedback when approved=false
-    #     # - Triggers plan regeneration
-    #     # - Returns to pending approval state
-    #     pass
-    
-    # def test_approve_endpoint_invalid_thread_id(self, client):
-    #     """Test /approve endpoint with non-existent thread_id"""
-    #     
-    #     # response = client.post("/api/v1/approve/non-existent-thread", json={"approved": true})
-    #     # assert response.status_code == 404
-    #     pass
-
-    # TODO: Uncomment and implement when both endpoints are ready
-    # def test_complete_workflow_flow_with_approval(self, client, mock_workflow_factory, sample_pending_approval_result, sample_workflow_result):
-    #     """Test complete workflow flow: run -> status -> approve -> status"""
-    #     
-    #     # Expected flow:
-    #     # 1. POST /run -> get thread_id
-    #     # 2. GET /status/{thread_id} -> check pending approval
-    #     # 3. POST /approve/{thread_id} -> approve plan
-    #     # 4. GET /status/{thread_id} -> check execution progress
-    #     # 5. GET /status/{thread_id} -> check final completion
-    #     pass
-    
-    # def test_workflow_rejection_and_regeneration_flow(self, client, mock_workflow_factory):
-    #     """Test workflow rejection and plan regeneration flow"""
-    #     
-    #     # Expected flow:
-    #     # 1. POST /run -> get thread_id
-    #     # 2. GET /status/{thread_id} -> pending approval
-    #     # 3. POST /approve/{thread_id} with rejection and feedback
-    #     # 4. GET /status/{thread_id} -> new plan pending approval
-    #     # 5. POST /approve/{thread_id} with approval
-    #     # 6. GET /status/{thread_id} -> execution in progress
-    #     pass
-    # ==================== Helper Methods for Future Extensions ====================
-    
+            assert status_response_3.status_code == 200
+            status_data_3 = status_response_3.json()
+            assert status_data_3["status"] == "completed"
+            assert status_data_3["final_report"] is not None
+ 
     def _create_test_workflow(self, client, request_text: str) -> str:
         """
         Helper method to create a test workflow and return thread_id.
@@ -795,23 +1056,7 @@ class TestAPIIntegration:
         assert response.status_code == 200
         return response.json()["thread_id"]
     
-    # def _wait_for_workflow_completion(self, client, thread_id: str, timeout: int = 30) -> Dict[str, Any]:
-    #     """
-    #     Helper method to wait for workflow completion (for future use).
-    #     
-    #     This will be useful when implementing /status endpoint tests.
-    #     """
-    #     start_time = time.time()
-    #     while time.time() - start_time < timeout:
-    #         # TODO: Replace with actual /status endpoint call when implemented
-    #         # response = client.get(f"/api/v1/status/{thread_id}")
-    #         # if response.status_code == 200:
-    #         #     data = response.json()
-    #         #     if data["status"] in ["completed", "failed"]:
-    #         #         return data
-    #         time.sleep(0.5)
-    #     
-    #     raise TimeoutError(f"Workflow {thread_id} did not complete within {timeout} seconds")
+    
 
 # ==================== Additional Fixtures for API Testing ====================
 

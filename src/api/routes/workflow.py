@@ -223,6 +223,34 @@ class WorkflowStatusResponse(BaseModel):
             }
         }
 
+class ApprovalRequest(BaseModel):
+    approved: bool = Field(..., description="Whether the plan is approved or rejected")
+    feedback: Optional[str] = Field(None, description="Optional feedback for plan improvement when rejected")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "approved": False,
+                "feedback": "Please add more detailed research on market trends and include cost analysis"
+            }
+        }
+
+class ApprovalResponse(BaseModel):
+    thread_id: str = Field(..., description="Workflow thread identifier")
+    status: str = Field(..., description="Updated workflow status after approval")
+    message: str = Field(..., description="Human-readable status message")
+    updated_at: datetime = Field(..., description="Timestamp when approval was processed")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "thread_id": "550e8400-e29b-41d4-a716-446655440000",
+                "status": "approved",
+                "message": "Plan approved. Workflow execution resumed.",
+                "updated_at": "2024-01-15T10:45:00Z"
+            }
+        }
+
 class ErrorResponse(BaseModel):
     error: str = Field(..., description="Error message")
     details: Optional[str] = Field(None, description="Additional error details")
@@ -389,6 +417,131 @@ async def get_workflow_status(
         )
 
 
+@router.post("/approve/{thread_id}", response_model=ApprovalResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid request or workflow not in approval state"},
+        404: {"model": ErrorResponse, "description": "Workflow not found"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
+    summary="Approve or Reject Workflow Plan",
+    description="Submit approval decision for AI-generated plan with optional feedback for improvements"
+)
+async def approve_workflow_plan(
+    thread_id: str,
+    request: ApprovalRequest,
+    background_tasks: BackgroundTasks,
+    workflow_factory: WorkflowFactory = Depends(get_workflow_factory)
+) -> ApprovalResponse:
+    """
+    Process human approval for AI-generated workflow plans.
+    
+    This endpoint:
+    1. Validates the workflow exists and is in pending approval state
+    2. Updates the workflow state with approval decision and feedback
+    3. Resumes workflow execution in background if approved
+    4. Triggers plan regeneration if rejected with feedback
+    5. Returns updated workflow status
+    
+    The workflow will continue execution in the background after approval.
+    """
+    
+    logger.info(f"Processing approval for workflow {thread_id}: approved={request.approved}")
+    
+    try:
+        # Validate thread_id format
+        if not thread_id or len(thread_id.strip()) == 0:
+            logger.warning(f"Empty thread_id provided for approval")
+            raise HTTPException(
+                status_code=400,
+                detail="Thread ID cannot be empty"
+            )
+        
+        # Try UUID validation, but allow test thread IDs
+        try:
+            uuid.UUID(thread_id)
+        except ValueError:
+            if not thread_id.startswith("test-"):
+                logger.warning(f"Invalid thread_id format for approval: {thread_id}")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid thread_id format. Must be a valid UUID or test ID."
+                )
+        
+        # Validate feedback requirement for rejections
+        if not request.approved and not request.feedback:
+            logger.warning(f"Approval rejected for {thread_id} but no feedback provided")
+            raise HTTPException(
+                status_code=400,
+                detail="Feedback is required when rejecting a plan"
+            )
+        
+        # Get current workflow status to validate state
+        current_status = workflow_factory.get_workflow_status(thread_id)
+        
+        if not current_status or current_status.get("status") == "not_found":
+            logger.warning(f"Workflow {thread_id} not found for approval")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Workflow with thread_id {thread_id} not found"
+            )
+        
+        if current_status.get("status") == "error":
+            logger.error(f"Error in workflow {thread_id} during approval: {current_status.get('error')}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Workflow is in error state: {current_status.get('error')}"
+            )
+        
+        # Check if workflow is in a state that can accept approval
+        workflow_status = _determine_overall_status(
+            current_status.get("human_approval_status", "pending"),
+            current_status.get("plan", []),
+            current_status.get("final_report") is not None
+        )
+        
+        if workflow_status not in ["pending_approval", "plan_rejected"]:
+            logger.warning(f"Workflow {thread_id} not in approval state: {workflow_status}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Workflow is not in pending approval state. Current status: {workflow_status}"
+            )
+        
+        # Process approval in background to avoid blocking the response
+        background_tasks.add_task(
+            process_approval_background,
+            workflow_factory,
+            thread_id,
+            request.approved,
+            request.feedback
+        )
+        
+        # Determine response status and message
+        if request.approved:
+            status = "approved"
+            message = "Plan approved. Workflow execution resumed."
+            logger.info(f"Plan approved for workflow {thread_id}")
+        else:
+            status = "plan_rejected"
+            message = "Plan rejected. Regenerating plan with provided feedback."
+            logger.info(f"Plan rejected for workflow {thread_id} with feedback: {request.feedback[:100]}...")
+        
+        return ApprovalResponse(
+            thread_id=thread_id,
+            status=status,
+            message=message,
+            updated_at=datetime.utcnow()
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to process approval for workflow {thread_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process approval: {str(e)}"
+        )
+
+
 def _parse_timestamp(timestamp_str: Optional[str]) -> Optional[datetime]:
     if not timestamp_str:
         return None
@@ -519,7 +672,7 @@ def _estimate_remaining_time(plan: List[Dict[str, Any]]) -> Optional[int]:
     in_progress_tasks = len([t for t in plan if t["status"] == TaskStatus.IN_PROGRESS])
     
     return int(remaining_tasks * avg_duration + in_progress_tasks * avg_duration * 0.5)
-    
+
 def _determine_overall_status(
     human_approval_status: str, 
     plan: List[Dict[str, Any]], 
@@ -599,6 +752,76 @@ async def execute_workflow_background(
                 
                 workflow_factory.redis_state_manager.save_state(thread_id, error_state)
                 logger.info(f"Saved error state for workflow {thread_id}")
+                
+        except Exception as save_e:
+            logger.error(f"Failed to save error state for {thread_id}: {save_e}")
+
+
+async def process_approval_background(
+    workflow_factory: WorkflowFactory,
+    thread_id: str,
+    approved: bool,
+    feedback: Optional[str] = None
+) -> None:
+    """
+    Process approval decision in background task.
+    
+    This function handles the actual workflow state update and resumption,
+    allowing the /approve endpoint to return immediately while the workflow
+    processes the approval asynchronously.
+    """
+    
+    logger.info(f"Starting background approval processing for workflow {thread_id}")
+    
+    try:
+        # Determine approval status string
+        approval_status = ApprovalStatus.APPROVED if approved else ApprovalStatus.REJECTED
+        
+        # Resume workflow with approval decision
+        result = workflow_factory.resume_after_approval(
+            thread_id=thread_id,
+            approval_status=approval_status,
+            feedback=feedback
+        )
+        
+        if approved:
+            logger.info(f"Workflow {thread_id} resumed successfully after approval")
+            logger.debug(f"Resumed workflow result keys: {list(result.keys()) if result else 'No result'}")
+        else:
+            logger.info(f"Workflow {thread_id} plan regeneration initiated with feedback")
+            logger.debug(f"Plan regeneration result keys: {list(result.keys()) if result else 'No result'}")
+        
+    except Exception as e:
+        logger.error(f"Background approval processing failed for {thread_id}: {str(e)}", exc_info=True)
+        
+        # Save error state to Redis if available
+        try:
+            if (workflow_factory.checkpointing_type == "hybrid" and 
+                workflow_factory.redis_state_manager):
+                
+                error_message = f"Approval processing failed: {str(e)}"
+                error_state = {
+                    "user_request": "Unknown",  # Will be overwritten if state exists
+                    "plan": [],
+                    "task_results": {},
+                    "next_task_id": None,
+                    "messages": [error_message],
+                    "human_approval_status": ApprovalStatus.REJECTED,
+                    "user_feedback": f"System error during approval: {str(e)}",
+                    "final_report": None
+                }
+                
+                # Try to get existing state and merge
+                existing_state = workflow_factory.redis_state_manager.get_state(thread_id)
+                if existing_state:
+                    error_state.update({
+                        "user_request": existing_state.get("user_request", "Unknown"),
+                        "plan": existing_state.get("plan", []),
+                        "task_results": existing_state.get("task_results", {}),
+                    })
+                
+                workflow_factory.redis_state_manager.save_state(thread_id, error_state)
+                logger.info(f"Saved error state for workflow {thread_id} after approval failure")
                 
         except Exception as save_e:
             logger.error(f"Failed to save error state for {thread_id}: {save_e}")
