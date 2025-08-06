@@ -2,6 +2,8 @@ import uvicorn
 import logging
 import signal
 import sys
+import os
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -11,7 +13,10 @@ from src.config.settings import get_settings
 from src.utils.logging_config import setup_logging, get_service_logger
 from src.core.background_cleanup import cleanup_service
 
-# Initialize logging first
+# Load environment variables first
+load_dotenv()
+
+# Initialize logging
 logger = get_service_logger("main")
 settings = get_settings()
 
