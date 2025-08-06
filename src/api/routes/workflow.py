@@ -564,8 +564,8 @@ def _build_status_response(thread_id: str, status_data: Dict[str, Any], checkpoi
     # Extract basic information
     user_request = status_data.get("user_request", "")
     plan = status_data.get("plan", [])
-    task_results = status_data.get("task_results", {})
-    messages = status_data.get("messages", [])
+    task_results = status_data.get("task_results") or {}  # Handle None case
+    messages = status_data.get("messages") or []  # Handle None case
     human_approval_status = status_data.get("human_approval_status", "pending")
     user_feedback = status_data.get("user_feedback")
     final_report = status_data.get("final_report")
