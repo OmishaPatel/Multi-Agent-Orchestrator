@@ -1,4 +1,7 @@
 import './style.css'
+import './components/InputForm/input-form.css'
+import { InputForm } from './components/InputForm/InputForm.js'
+import { apiClient } from './utils/api.js'
 
 class AppState {
   constructor() {
@@ -123,9 +126,10 @@ class ClarityApp {
     // This will be expanded in future tasks to render different components
     // based on application state
     const { content } = this.elements;
-    
+
     switch (this.state.status) {
       case 'idle':
+      case 'ready':
         this.renderWelcome();
         break;
       case 'planning':
@@ -146,30 +150,15 @@ class ClarityApp {
   }
 
   renderWelcome() {
-    this.elements.content.innerHTML = `
-      <div class="card">
-        <div class="card-header">
-          <h2 class="card-title">Welcome to Clarity.ai</h2>
-          <p class="card-description">
-            Transform complex requests into structured plans and executed results
-          </p>
-        </div>
-        
-        <div class="text-center py-8">
-          <p class="text-lg text-secondary mb-6">
-            Ready to orchestrate your next multi-agent workflow
-          </p>
-          <button class="btn btn-primary" id="get-started-btn">
-            Get Started
-          </button>
-        </div>
-      </div>
-    `;
+    // Clear existing content
+    DOMUtils.clearElement(this.elements.content);
 
-    // Add event listener for get started button
-    document.getElementById('get-started-btn').addEventListener('click', () => {
-      this.state.setState({ status: 'ready' });
-    });
+    // Create and render InputForm component
+    if (!this.inputForm) {
+      this.inputForm = new InputForm(this.state, apiClient);
+    }
+
+    this.elements.content.appendChild(this.inputForm.render());
   }
 
   renderPlanning() {
@@ -245,9 +234,9 @@ class ClarityApp {
 
   handleError(error) {
     console.error('Application error:', error);
-    this.state.setState({ 
-      status: 'error', 
-      error: error.message || 'An unexpected error occurred' 
+    this.state.setState({
+      status: 'error',
+      error: error.message || 'An unexpected error occurred'
     });
   }
 }

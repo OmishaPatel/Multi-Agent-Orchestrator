@@ -76,6 +76,7 @@
   cursor: pointer;
   border: 1px solid transparent;
   text-decoration: none;
+  background: none;
 }
 
 .btn:disabled {
@@ -168,3 +169,15 @@
   font-size: var(--font-size-sm);
   margin-top: var(--space-1);
 }
+/* Utility classes */
+.text-center { text-align: center; }
+.text-left { text-align: left; }
+.text-right { text-align: right; }
+
+.py-6 { padding-top: var(--space-6); padding-bottom: var(--space-6); }
+.py-8 { padding-top: var(--space-8); padding-bottom: var(--space-8); }
+.mb-4 { margin-bottom: var(--space-4); }
+.mb-6 { margin-bottom: var(--space-6); }
+.mt-1 { margin-top: var(--space-1); }
+
+.text-error { color: var(--color-error); }
