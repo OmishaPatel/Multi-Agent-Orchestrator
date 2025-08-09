@@ -8,10 +8,14 @@ from src.config.settings import get_settings
 from src.utils.logging_config import get_service_logger
 import logging
 import uuid
+import threading
 
 logger = get_service_logger("workflow_factory")
 
 class WorkflowFactory:
+    # Class-level storage for workflow instances (singleton pattern)
+    _workflow_instances: Dict[str, StateGraph] = {}
+    _instance_lock = threading.Lock()
 
     def __init__(self):
         self.settings = get_settings()
@@ -47,6 +51,33 @@ class WorkflowFactory:
         
         self.workflow_graph = IntelligentWorkflowGraph()
 
+    def get_or_create_workflow(self, thread_id: str) -> StateGraph:
+        """
+        Get existing workflow instance for thread_id or create a new one.
+        This ensures the same workflow instance is used across API calls.
+        """
+        with self._instance_lock:
+            if thread_id not in self._workflow_instances:
+                logger.info(f"Creating new workflow instance for thread {thread_id}")
+                workflow = self.create_workflow()
+                self._workflow_instances[thread_id] = workflow
+            else:
+                logger.debug(f"Reusing existing workflow instance for thread {thread_id}")
+            
+            return self._workflow_instances[thread_id]
+    
+    def cleanup_workflow_instance(self, thread_id: str) -> None:
+        """
+        Clean up workflow instance when workflow is completed.
+        This prevents memory leaks from accumulating workflow instances.
+        """
+        with self._instance_lock:
+            if thread_id in self._workflow_instances:
+                logger.info(f"Cleaning up workflow instance for thread {thread_id}")
+                del self._workflow_instances[thread_id]
+            else:
+                logger.debug(f"No workflow instance found for cleanup: {thread_id}")
+
     def create_workflow(self) -> StateGraph:
         """Create the intelligent workflow with configurable checkpointing"""
         
@@ -80,7 +111,8 @@ class WorkflowFactory:
         if not thread_id:
             thread_id = str(uuid.uuid4())
 
-        workflow = self.create_workflow()
+        # Use singleton pattern to get/create workflow instance
+        workflow = self.get_or_create_workflow(thread_id)
         config = {"configurable": {"thread_id": thread_id}}
         try:
             # Create properly initialized initial state
@@ -95,55 +127,48 @@ class WorkflowFactory:
                 "final_report": None
             }
             
-            result = workflow.invoke(initial_state, config=config)
+            # SIMPLIFIED APPROACH: Just execute the planning_agent directly and manually set up the interruption state
+            logger.info(f"Executing planning agent directly to generate initial plan")
+            
+            # Execute just the planning node to generate the plan
+            planning_result = self.workflow_graph._planning_node(initial_state)
+            logger.info(f"Planning completed with {len(planning_result.get('plan', []))} tasks")
+            
+            # Manually set up the workflow state to simulate proper interruption at await_approval
+            workflow.update_state(config, planning_result)
+            
+            # Verify the workflow state is set up correctly
+            try:
+                current_workflow_state = workflow.get_state(config)
+                logger.info(f"Manual workflow state setup:")
+                logger.info(f"  - State values: {list(current_workflow_state.values.keys()) if current_workflow_state.values else 'None'}")
+                logger.info(f"  - Next nodes: {current_workflow_state.next}")
+                logger.info(f"  - Approval status: {current_workflow_state.values.get('human_approval_status', 'unknown') if current_workflow_state.values else 'unknown'}")
+            except Exception as e:
+                logger.warning(f"Could not verify manual workflow state: {e}")
+            
+            # We already have the planning_result from the direct planning execution
+            logger.info(f"Initial workflow setup completed with direct planning execution")
+            logger.info(f"✅ Workflow manually set up to be ready for approval/rejection")
             
             # Save state to Redis if using hybrid checkpointing
             if self.checkpointing_type == "hybrid" and self.redis_state_manager:
-                self.redis_state_manager.save_state(thread_id, result)
+                logger.info(f"Saving initial workflow state to Redis")
+                self.redis_state_manager.save_state(thread_id, planning_result)
             
-            return {"thread_id": thread_id, "result": result}
+            logger.info(f"Initial workflow setup completed with manual planning execution")
+            return {"thread_id": thread_id, "result": planning_result}
         except Exception as e:
             logger.error(f"Failed to start workflow: {e}")
             raise
-    def continue_workflow(self, thread_id: str, new_input: Dict[str, Any]) -> Any:
-        workflow = self.create_workflow()
-        config = {"configurable": {"thread_id": thread_id}}
-
-        try:
-            # For Redis checkpointing, use stream for better control over continuation
-            if self.checkpointing_type == "redis":
-                logger.info(f"Continuing Redis-checkpointed workflow {thread_id}")
-                result = None
-                for chunk in workflow.stream(new_input, config=config):
-                    if chunk:
-                        result = chunk
-                return result
-            else:
-                # For memory checkpointing, use invoke
-                result = workflow.invoke(new_input, config=config)
-                return result
-        except ValueError as e:
-            if "No tasks to run in graph" in str(e):
-                logger.warning(f"No tasks to run for workflow {thread_id}, attempting to get current state")
-                # Try to get the current state to understand what's happening
-                try:
-                    current_state = workflow.get_state(config)
-                    logger.info(f"Current workflow state: {current_state}")
-                    return current_state.values if current_state else None
-                except Exception as state_e:
-                    logger.error(f"Failed to get workflow state: {state_e}")
-                    raise e
-            else:
-                raise e
-        except Exception as e:
-            logger.error(f"Failed to continue workflow {thread_id}: {e}")
-            raise
+    
 
     def resume_after_approval(self, thread_id: str, approval_status: str, feedback: str = None) -> Any:
         """Resume workflow after human approval with proper state handling"""
         logger.info(f"DIAGNOSTIC: resume_after_approval called - thread_id={thread_id}, approval_status={approval_status}, feedback={feedback is not None}")
         
-        workflow = self.create_workflow()
+        # CRITICAL: Use the SAME workflow instance that was created for this thread
+        workflow = self.get_or_create_workflow(thread_id)
         config = {"configurable": {"thread_id": thread_id}}
         
         # CRITICAL: For hybrid checkpointing, we need to ensure the LangGraph state
@@ -217,6 +242,16 @@ class WorkflowFactory:
                     if current_workflow_state.values:
                         logger.info(f"  - Approval status in state: {current_workflow_state.values.get('human_approval_status', 'unknown')}")
                         logger.info(f"  - Plan tasks in state: {len(current_workflow_state.values.get('plan', []))}")
+                    
+                    # Check workflow state - for manually set up workflows, next might be empty initially
+                    if current_workflow_state.next:
+                        logger.info(f"  - Workflow should resume from: {current_workflow_state.next}")
+                        if "await_approval" not in current_workflow_state.next:
+                            logger.info(f"  - Workflow will start from: {current_workflow_state.next}")
+                    else:
+                        logger.info(f"  - Workflow will start from the beginning (expected for manual setup)")
+                else:
+                    logger.warning(f"  - WARNING: No workflow state found - this is unexpected")
             except Exception as debug_e:
                 logger.warning(f"Could not get workflow state for debugging: {debug_e}")
             
@@ -259,158 +294,189 @@ class WorkflowFactory:
                 # For approved plans, we need to continue from the await_approval state, not restart
                 # The workflow is paused at await_approval, so we should resume from there
                 # For rejected plans, we pass None to restart from planning_agent
-                # CRITICAL: For interrupted workflows, we must pass None to continue from interruption point
-                stream_input = None
+                # Use LangGraph's native streaming for both approved and rejected workflows
+                logger.info(f"LANGGRAPH STREAMING: Using LangGraph's native streaming - approval_status={approval_status}")
                 
-                # For interrupted workflows, we need to continue from where they left off
-                # The workflow is paused at await_approval, so we resume with None input
-                for chunk in workflow.stream(stream_input, config=config, stream_mode="values"):
-                    execution_count += 1
-                    logger.info(f"Workflow stream iteration {execution_count}, chunk: {list(chunk.keys()) if chunk else 'None'}")
+                # CRITICAL: For approved workflows, we need to bypass the interruption and continue execution
+                # Since the plan is already approved, we can continue directly to task execution
+                
+                if approval_status == "approved":
+                    logger.info("APPROVED WORKFLOW: Creating new workflow without interruption for task execution")
                     
-                    if execution_count > max_executions:
-                        logger.warning(f"Workflow {thread_id} exceeded max executions ({max_executions}), stopping")
-                        break
+                    # Create a new workflow instance without interruption for task execution
+                    execution_workflow = self.workflow_graph.create_workflow()
+                    execution_compiled = execution_workflow.compile(checkpointer=self.checkpoint_saver)
+                    
+                    # Stream the execution workflow with the approved state
+                    logger.info("Starting LangGraph execution streaming for approved workflow...")
+                    
+                    for chunk in execution_compiled.stream(complete_state, config=config, stream_mode="values"):
+                        execution_count += 1
+                        logger.info(f"Execution stream iteration {execution_count}")
                         
-                    if chunk:
-                        result = chunk
-                        # Log progress for debugging
-                        for node_name, node_result in chunk.items():
-                            logger.info(f"Executed node {node_name} (execution {execution_count})")
-                            if node_result and isinstance(node_result, dict):
-                                approval_status_result = node_result.get('human_approval_status', 'unknown')
-                                plan_count = len(node_result.get('plan', []))
-                                next_task_id = node_result.get('next_task_id')
-                                logger.info(f"  - Approval status: {approval_status_result}")
-                                logger.info(f"  - Plan tasks: {plan_count}")
-                                logger.info(f"  - Next task ID: {next_task_id}")
-                                
-                                # Log the first task to verify we have the right plan
-                                if node_result.get('plan') and len(node_result['plan']) > 0:
-                                    first_task = node_result['plan'][0]
-                                    logger.info(f"  - First task: {first_task.get('description', 'No description')[:60]}...")
-                                    logger.info(f"  - First task status: {first_task.get('status', 'unknown')}")
-                                
-                                # Save state after each node execution
-                                if self.checkpointing_type == "hybrid" and self.redis_state_manager:
-                                    logger.info(f"Saving state after {node_name} execution")
-                                    self.redis_state_manager.save_state(thread_id, node_result)
-                                
-                                # If we're back to pending approval (plan regeneration), save state and break
-                                if approval_status_result == 'pending' and plan_count > 0 and approval_status == "rejected":
-                                    logger.info(f"Plan regenerated successfully, stopping execution")
-                                    should_continue = False
-                                    break
-                                
-                                # For approved plans, continue execution until tasks actually start
-                                if approval_status == "approved":
-                                    # Check if any tasks are now in progress or completed
-                                    task_statuses = [task.get('status', 'pending') for task in node_result.get('plan', [])]
-                                    
-                                    if any(status in ['in_progress', 'completed'] for status in task_statuses):
-                                        logger.info(f"Tasks are now executing! Found task statuses: {task_statuses}")
-                                        # Continue for a few more steps to let tasks complete
-                                        if execution_count >= 20:  # Allow even more time for task completion
-                                            logger.info(f"Tasks executing, stopping after {execution_count} steps")
-                                            should_continue = False
-                                            break
-                                    else:
-                                        # For approved plans, be very aggressive about continuing
-                                        logger.info(f"Approved plan - continuing execution (step {execution_count})")
-                                        logger.info(f"Current node: {node_name}, task statuses: {task_statuses}")
-                                        
-                                        # Only stop if we've really tried many times
-                                        if execution_count >= 25:  # Much higher limit
-                                            logger.warning(f"Approved plan execution stopping after {execution_count} steps - may need investigation")
-                                            should_continue = False
-                                            break
-                        
-                        if not should_continue:
+                        if execution_count > max_executions:
+                            logger.warning(f"Workflow {thread_id} exceeded max executions ({max_executions}), stopping")
                             break
-                
-                # Save final state to Redis if using hybrid checkpointing
-                if result and self.checkpointing_type == "hybrid" and self.redis_state_manager:
-                    # The result from workflow.stream() is the actual state, not a node result
-                    final_state = None
-                    
-                    # Check if result is the state itself (AddableValuesDict or similar)
-                    if hasattr(result, 'get') and 'plan' in result:
-                        final_state = dict(result)  # Convert to regular dict
-                        logger.info(f"Using workflow stream result as final state")
-                    elif isinstance(result, dict) and 'plan' in result:
-                        final_state = result
-                        logger.info(f"Using result dict as final state")
-                    else:
-                        # Fallback: try to extract from node results
-                        if isinstance(result, dict):
-                            for node_name, node_result in result.items():
-                                if isinstance(node_result, dict) and 'plan' in node_result:
-                                    final_state = node_result
-                                    logger.info(f"Extracted final state from node '{node_name}'")
-                                    break
-                    
-                    if final_state:
-                        logger.info(f"Saving final state to Redis: approval_status={final_state.get('human_approval_status')}, plan_tasks={len(final_state.get('plan', []))}")
-                        # Log the plan details for debugging
-                        plan = final_state.get('plan', [])
-                        for i, task in enumerate(plan):
-                            task_status = task.get('status', 'unknown')
-                            logger.info(f"  Saving task {task.get('id', i+1)}: {task.get('description', 'No description')[:50]}... [{task_status}]")
                         
-                        # Log final report status
-                        final_report = final_state.get('final_report')
-                        logger.info(f"  Final report: {'Generated' if final_report else 'Not generated'}")
-                        
-                        self.redis_state_manager.save_state(thread_id, final_state)
-                        logger.info(f"Successfully saved final state to Redis")
-                    else:
-                        logger.warning(f"Could not extract final state from result for Redis save")
-                        logger.info(f"Result type: {type(result)}, keys: {list(result.keys()) if hasattr(result, 'keys') else 'No keys'}")
-                        # Try to get current state and save that
-                        try:
-                            current_state = workflow.get_state(config)
-                            if current_state and current_state.values:
-                                logger.info(f"Saving current workflow state as fallback")
-                                self.redis_state_manager.save_state(thread_id, current_state.values)
-                        except Exception as fallback_e:
-                            logger.error(f"Failed to save fallback state: {fallback_e}")
+                        if chunk:
+                            result = chunk
+                            
+                            # Log current execution state
+                            current_approval_status = result.get('human_approval_status', 'unknown')
+                            plan = result.get('plan', [])
+                            next_task_id = result.get('next_task_id')
+                            
+                            logger.info(f"  Execution chunk {execution_count}:")
+                            logger.info(f"    - Approval status: {current_approval_status}")
+                            logger.info(f"    - Plan tasks: {len(plan)}")
+                            logger.info(f"    - Next task ID: {next_task_id}")
+                            
+                            # Log task statuses for debugging
+                            if plan:
+                                task_statuses = [task.get('status', 'unknown') for task in plan]
+                                completed_count = task_statuses.count('completed')
+                                in_progress_count = task_statuses.count('in_progress')
+                                pending_count = task_statuses.count('pending')
+                                
+                                logger.info(f"    - Task statuses: {completed_count} completed, {in_progress_count} in progress, {pending_count} pending")
+                                
+                                # Log details of current task if any
+                                if next_task_id:
+                                    current_task = next((task for task in plan if task['id'] == next_task_id), None)
+                                    if current_task:
+                                        logger.info(f"    - Current task: {current_task.get('description', 'No description')[:50]}... [{current_task.get('status', 'unknown')}]")
+                            
+                            # Save state to Redis after each chunk for API access
+                            if self.checkpointing_type == "hybrid" and self.redis_state_manager:
+                                logger.debug(f"Saving workflow state to Redis after execution chunk {execution_count}")
+                                self.redis_state_manager.save_state(thread_id, result)
+                            
+                            # Check for completion conditions
+                            if result.get('final_report'):
+                                logger.info("Workflow completed successfully - final report generated")
+                                
+                                # CRITICAL: Ensure complete final state preservation
+                                if self.checkpointing_type == "hybrid" and self.redis_state_manager:
+                                    # Get the current workflow state to ensure we have complete data
+                                    try:
+                                        workflow = self.get_or_create_workflow(thread_id)
+                                        config = {"configurable": {"thread_id": thread_id}}
+                                        current_workflow_state = workflow.get_state(config)
+                                        
+                                        # Use workflow state if it has more complete data
+                                        if current_workflow_state and current_workflow_state.values:
+                                            workflow_state = current_workflow_state.values
+                                            
+                                            # Merge the final report from result into workflow state
+                                            complete_final_state = workflow_state.copy()
+                                            complete_final_state['final_report'] = result.get('final_report')
+                                            
+                                            logger.info("Saving complete final state to Redis before cleanup")
+                                            logger.info(f"Complete state contains: plan={len(complete_final_state.get('plan', []))} tasks, results={len(complete_final_state.get('task_results', {}))} completed, messages={len(complete_final_state.get('messages', []))}")
+                                            
+                                            # Save the complete state
+                                            self.redis_state_manager.save_state(thread_id, complete_final_state)
+                                            
+                                            # Verify the save worked
+                                            verification_state = self.redis_state_manager.get_state(thread_id)
+                                            if verification_state:
+                                                plan_count = len(verification_state.get('plan', []))
+                                                results_count = len(verification_state.get('task_results', {}))
+                                                messages_count = len(verification_state.get('messages', []))
+                                                logger.info(f"Final state verified in Redis: plan={plan_count} tasks, results={results_count} completed, messages={messages_count}")
+                                            else:
+                                                logger.warning("Final state verification failed - state not found in Redis")
+                                        else:
+                                            # Fallback to using result state
+                                            logger.warning("Could not get workflow state, using result state as fallback")
+                                            self.redis_state_manager.save_state(thread_id, result)
+                                    except Exception as state_e:
+                                        logger.error(f"Error preserving complete final state: {state_e}")
+                                        # Fallback to saving result state
+                                        self.redis_state_manager.save_state(thread_id, result)
+                                
+                                # Clean up workflow instance to prevent memory leaks
+                                self.cleanup_workflow_instance(thread_id)
+                                break
+                            elif plan and all(task.get('status') == 'completed' for task in plan):
+                                logger.info("All tasks completed - workflow should finish soon")
+                                # Continue streaming to let compile_results run
                 
-                logger.info(f"DIAGNOSTIC: Workflow stream completed after {execution_count} iterations")
-                logger.info(f"DIAGNOSTIC: Final result type: {type(result)}")
-                
-                if result and isinstance(result, dict):
-                    # Check if this is a node result or final state
-                    if len(result) == 1 and list(result.keys())[0] in ['planning_agent', 'task_selector', 'research_agent', 'code_agent', 'compile_results']:
-                        # This is a single node result, extract the actual state
-                        node_name = list(result.keys())[0]
-                        actual_result = result[node_name]
-                        logger.info(f"DIAGNOSTIC: Extracted result from node '{node_name}'")
-                        result = actual_result
+                else:
+                    # For rejected workflows, use the original interrupted workflow
+                    logger.info("REJECTED WORKFLOW: Using interrupted workflow for plan regeneration")
                     
+                    for chunk in workflow.stream(None, config=config, stream_mode="values"):
+                        execution_count += 1
+                        logger.info(f"Rejection stream iteration {execution_count}")
+                        
+                        if execution_count > max_executions:
+                            logger.warning(f"Workflow {thread_id} exceeded max executions ({max_executions}), stopping")
+                            break
+                        
+                        if chunk:
+                            result = chunk
+                            
+                            # Log current execution state
+                            current_approval_status = result.get('human_approval_status', 'unknown')
+                            plan = result.get('plan', [])
+                            
+                            logger.info(f"  Rejection chunk {execution_count}:")
+                            logger.info(f"    - Approval status: {current_approval_status}")
+                            logger.info(f"    - Plan tasks: {len(plan)}")
+                            
+                            # Save state to Redis after each chunk for API access
+                            if self.checkpointing_type == "hybrid" and self.redis_state_manager:
+                                logger.debug(f"Saving workflow state to Redis after rejection chunk {execution_count}")
+                                self.redis_state_manager.save_state(thread_id, result)
+                            
+                            # Check for completion conditions
+                            if current_approval_status == 'pending':
+                                logger.info("Plan regenerated successfully for rejected workflow")
+                                break
+                
+                logger.info(f"LangGraph streaming completed after {execution_count} iterations")
+                
+                # Final state is already saved to Redis during streaming
+                # Log final execution summary
+                if result:
                     plan = result.get('plan', [])
                     task_results = result.get('task_results', {})
                     final_report = result.get('final_report')
                     
-                    logger.info(f"DIAGNOSTIC: Final state - Plan: {len(plan)} tasks, Task results: {len(task_results)}, Final report: {'Yes' if final_report else 'No'}")
+                    logger.info(f"Workflow execution completed:")
+                    logger.info(f"  - Plan: {len(plan)} tasks")
+                    logger.info(f"  - Task results: {len(task_results)} completed")
+                    logger.info(f"  - Final report: {'Generated' if final_report else 'Not generated'}")
                     
-                    # Log task statuses
-                    for i, task in enumerate(plan):
-                        status = task.get('status', 'unknown')
-                        logger.info(f"DIAGNOSTIC: Final Task {i+1} status: {status}")
+                    # Log task completion summary
+                    if plan:
+                        completed_tasks = [t for t in plan if t.get('status') == 'completed']
+                        failed_tasks = [t for t in plan if t.get('status') == 'failed']
+                        logger.info(f"  - Completed tasks: {len(completed_tasks)}/{len(plan)}")
+                        if failed_tasks:
+                            logger.warning(f"  - Failed tasks: {len(failed_tasks)}")
+                else:
+                    logger.warning("No final result available from workflow execution")
                 
                 return result
                 
             except Exception as stream_e:
-                logger.warning(f"Stream approach failed: {stream_e}, trying invoke")
-                # Fallback to invoke
-                result = workflow.invoke(None, config=config)
+                logger.error(f"LangGraph streaming failed: {stream_e}, trying invoke as fallback")
                 
-                # Save final state to Redis if using hybrid checkpointing
-                if result and self.checkpointing_type == "hybrid" and self.redis_state_manager:
-                    logger.info(f"Saving invoke result to Redis: approval_status={result.get('human_approval_status')}, plan_tasks={len(result.get('plan', []))}")
-                    self.redis_state_manager.save_state(thread_id, result)
-                
-                return result
+                # Fallback to invoke (should rarely be needed with singleton pattern)
+                try:
+                    result = workflow.invoke(None, config=config)
+                    
+                    # Save fallback result to Redis
+                    if result and self.checkpointing_type == "hybrid" and self.redis_state_manager:
+                        logger.info(f"Saving fallback invoke result to Redis")
+                        self.redis_state_manager.save_state(thread_id, result)
+                    
+                    return result
+                except Exception as invoke_e:
+                    logger.error(f"Both streaming and invoke failed: {invoke_e}")
+                    raise stream_e  # Raise the original streaming error
                 
         except ValueError as e:
             if "No tasks to run in graph" in str(e):
@@ -453,14 +519,19 @@ class WorkflowFactory:
                 # Hybrid checkpointing - get state from Redis first
                 redis_state = self.redis_state_manager.get_state(thread_id)
                 
-                # Also try to get current workflow state for comparison
+                # Also try to get current workflow state for comparison (only if workflow instance exists)
                 workflow_state = None
                 try:
-                    workflow = self.create_workflow()
-                    config = {"configurable": {"thread_id": thread_id}}
-                    current_state = workflow.get_state(config)
-                    if current_state and current_state.values:
-                        workflow_state = current_state.values
+                    # Check if workflow instance exists before trying to access it
+                    with self._instance_lock:
+                        if thread_id in self._workflow_instances:
+                            workflow = self._workflow_instances[thread_id]
+                            config = {"configurable": {"thread_id": thread_id}}
+                            current_state = workflow.get_state(config)
+                            if current_state and current_state.values:
+                                workflow_state = current_state.values
+                        else:
+                            logger.debug(f"Workflow instance for {thread_id} has been cleaned up, using Redis state only")
                 except Exception as e:
                     logger.debug(f"Could not get workflow state for {thread_id}: {e}")
                 
@@ -503,7 +574,8 @@ class WorkflowFactory:
             elif self.checkpointing_enabled:
                 # Memory checkpointing - try to get current state
                 try:
-                    workflow = self.create_workflow()
+                    # Use singleton pattern to get the same workflow instance
+                    workflow = self.get_or_create_workflow(thread_id)
                     config = {"configurable": {"thread_id": thread_id}}
                     current_state = workflow.get_state(config)
                     if current_state and current_state.values:

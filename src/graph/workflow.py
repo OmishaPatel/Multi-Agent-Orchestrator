@@ -1,12 +1,10 @@
 from typing import Dict, Any, List, Literal
 from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolExecutor
 from src.graph.state import AgentState, SubTask, TaskType, TaskStatus, ApprovalStatus, TimestampUtils
 from src.agents.planning_agent import PlanningAgent
 from src.agents.research_agent import ResearchAgent
 from src.agents.code_agent import CodeAgent
 from src.utils.logging_config import get_logger, get_workflow_logger, log_state_transition
-import asyncio
 
 logger = get_workflow_logger()
 
@@ -56,7 +54,7 @@ class IntelligentWorkflowGraph:
             self._approval_router,
             {
                 "approved": "task_selector",
-                "rejected": "planning_agent",
+                "rejected": "planning_agent", 
                 "end": END
             }
         )
@@ -85,40 +83,109 @@ class IntelligentWorkflowGraph:
     
     def _planning_node(self, state: AgentState) -> AgentState:
         """Planning agent node - decomposes user request into structured tasks"""
-        thread_id = state.get('thread_id', 'unkown')
+        thread_id = state.get('thread_id', 'unknown')
         log_state_transition("start", "planning", thread_id)
         
         try:
+            # CRITICAL: Check if we already have an approved plan - don't regenerate!
+            current_approval_status = state.get('human_approval_status', 'pending')
+            existing_plan = state.get('plan', [])
+            
+            if current_approval_status == 'approved' and existing_plan:
+                logger.info(f"Plan already approved with {len(existing_plan)} tasks - skipping regeneration")
+                logger.info("Proceeding directly to task execution")
+                # Create new state that preserves the approved plan but allows workflow to continue
+                new_state = state.copy()
+                # Keep the approved plan and status - the workflow should continue to await_approval
+                new_state['human_approval_status'] = ApprovalStatus.APPROVED  # Keep it approved
+                # Set the next task for execution
+                new_state['next_task_id'] = self._get_next_executable_task_id(new_state)
+                logger.info(f"Set next_task_id to: {new_state['next_task_id']} for approved plan")
+                
+                # Ensure messages are preserved
+                if 'messages' not in new_state or new_state['messages'] is None:
+                    new_state['messages'] = []
+                
+                # The workflow should continue to await_approval node, which will route to task_selector
+                log_state_transition("planning", "await_approval", thread_id)
+                logger.info("Approved plan will continue to await_approval -> task_selector -> task execution")
+                return new_state
+            
             # Generate or regenerate plan based on feedback
             if state.get('human_approval_status') == 'rejected' and state.get('user_feedback'):
-                logger.info("Regenerating plan based on user feedback")
+                logger.info(f"Regenerating plan based on user feedback: {state.get('user_feedback')}")
                 plan = self.planning_agent.regenerate_plan(
                     state['user_request'], 
                     state['user_feedback'],
                     state.get('plan', [])
                 )
+                logger.info(f"Plan regeneration completed with {len(plan)} tasks")
             else:
                 logger.info("Generating initial plan")
                 plan = self.planning_agent.generate_plan(state['user_request'])
+                logger.info(f"Initial plan generation completed with {len(plan)} tasks")
             
             # Update state with new plan
             new_state = state.copy()
             new_state['plan'] = plan
-            new_state['human_approval_status'] = 'pending'
-            new_state['user_feedback'] = None
+            new_state['human_approval_status'] = ApprovalStatus.PENDING  # Use constant instead of string
+            new_state['user_feedback'] = None  # Clear feedback after processing
+            
+            # Reset task results for new plan
+            new_state['task_results'] = {}
             
             # Set first task as next
             if plan:
                 new_state['next_task_id'] = self._get_next_executable_task_id(new_state)
+                logger.info(f"Set next_task_id to: {new_state['next_task_id']}")
+            else:
+                new_state['next_task_id'] = None
+            
+            # Add message to indicate plan regeneration
+            if 'messages' not in new_state or new_state['messages'] is None:
+                new_state['messages'] = []
+                
+            if state.get('human_approval_status') == 'rejected':
+                new_state['messages'].append("Plan regenerated based on user feedback")
+                logger.info("Added regeneration message to state")
+            else:
+                new_state['messages'].append("Initial plan generated")
+                logger.info("Added initial plan message to state")
+            
             log_state_transition("planning", "await_approval", thread_id)
-            logger.info(f"Generated plan with {len(plan)} tasks")
+            logger.info(f"Planning node completed: {len(plan)} tasks, approval status: {new_state['human_approval_status']}")
+            
+            # Log the plan details for debugging
+            for i, task in enumerate(plan):
+                logger.info(f"  Task {task['id']}: {task['description']} [{task['type']}]")
+            
+            # CRITICAL: Force save state to Redis after plan generation/regeneration
+            # This ensures the revised plan is immediately persisted
+            try:
+                from src.core.redis_state_manager import RedisStateManager
+                redis_manager = RedisStateManager()
+                if redis_manager:
+                    logger.info("Force-saving planning state to Redis")
+                    redis_manager.save_state(thread_id, new_state)
+                    logger.info("Planning state saved to Redis successfully")
+            except Exception as redis_e:
+                logger.warning(f"Failed to force-save planning state to Redis: {redis_e}")
+            
             return new_state
             
         except Exception as e:
             logger.error(f"Planning agent failed: {e}", exc_info=True)
-            # Return state with error indication
+            # Return state with error indication but preserve original state structure
             error_state = state.copy()
             error_state['plan'] = []
+            error_state['human_approval_status'] = ApprovalStatus.PENDING
+            error_state['user_feedback'] = None
+            error_state['next_task_id'] = None
+            
+            if 'messages' not in error_state or error_state['messages'] is None:
+                error_state['messages'] = []
+            error_state['messages'].append(f"Planning failed: {str(e)}")
+            
             return error_state
     
     def _await_approval_node(self, state: AgentState) -> AgentState:
@@ -264,13 +331,25 @@ class IntelligentWorkflowGraph:
     def _approval_router(self, state: AgentState) -> str:
         """Route based on human approval status"""
         approval_status = state.get('human_approval_status', 'pending')
+        user_feedback = state.get('user_feedback')
         
         logger.info(f"Approval router called with status: {approval_status}")
+        logger.info(f"User feedback: {user_feedback}")
         logger.info(f"State keys: {list(state.keys())}")
         logger.info(f"Plan has {len(state.get('plan', []))} tasks")
         
+        # Log the current plan to verify we have the right one
+        if state.get('plan') and len(state['plan']) > 0:
+            first_task = state['plan'][0]
+            logger.info(f"Current plan first task: {first_task.get('description', 'No description')[:60]}...")
+            
+            # Log all tasks for debugging
+            for i, task in enumerate(state['plan']):
+                logger.info(f"  Task {task.get('id', i+1)}: {task.get('description', 'No description')[:50]}...")
+        
         if approval_status == 'approved':
             logger.info("Plan approved, proceeding to task execution")
+            logger.info("Routing to task_selector for task execution")
             return "approved"
         elif approval_status == 'rejected':
             logger.info("Plan rejected, regenerating plan")
