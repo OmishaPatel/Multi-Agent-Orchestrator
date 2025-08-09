@@ -1,0 +1,508 @@
+/**
+ * ExecutionFlow Component Styles
+ * 
+ * Provides styling for:
+ * - Task dependency visualization using CSS Grid and Flexbox
+ * - Responsive design for different screen sizes
+ * - Progress indicators and status displays
+ * - Real-time update animations
+ */
+
+.execution-flow {
+  width: 100%;
+  max-width: 100%;
+}
+
+.execution-flow-container {
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* Header Section */
+.execution-flow-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: var(--space-6);
+  background: var(--color-background-secondary);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.execution-flow-title {
+  flex: 1;
+}
+
+.execution-flow-controls {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: var(--space-4);
+}
+
+/* Progress Section */
+.execution-flow-progress {
+  padding: var(--space-4) var(--space-6);
+  background: var(--color-background);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: var(--color-background-tertiary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-bottom: var(--space-3);
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-hover));
+  border-radius: var(--radius-full);
+  transition: width var(--transition-base);
+  position: relative;
+}
+
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  animation: progress-shimmer 2s infinite;
+}
+
+@keyframes progress-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.progress-text {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--font-size-sm);
+}
+
+.progress-percentage {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-primary);
+}
+
+.progress-status {
+  color: var(--color-text-secondary);
+}
+
+/* Main Content */
+.execution-flow-content {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: var(--space-6);
+  padding: var(--space-6);
+  min-height: 400px;
+}
+
+/* Task Dependency Graph */
+.task-dependency-graph {
+  background: var(--color-background-secondary);
+  border-radius: var(--radius-base);
+  padding: var(--space-4);
+  overflow: auto;
+}
+
+.task-graph {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 300px;
+}
+
+.task-level {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  justify-content: center;
+  position: relative;
+}
+
+.task-level:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  bottom: -calc(var(--space-4) / 2);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: var(--space-4);
+  background: var(--color-border);
+}
+
+/* Task Nodes */
+.task-node {
+  background: var(--color-background);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-base);
+  padding: var(--space-3);
+  min-width: 200px;
+  max-width: 250px;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+  position: relative;
+}
+
+.task-node:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.task-node.active {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 0.1);
+  animation: pulse-border 2s infinite;
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: var(--color-primary); }
+  50% { border-color: var(--color-primary-hover); }
+}
+
+.task-node-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-2);
+}
+
+.task-id {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  background: var(--color-background-tertiary);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.task-type {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.task-node-content {
+  margin-bottom: var(--space-2);
+}
+
+.task-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-2) 0;
+  line-height: var(--line-height-tight);
+}
+
+.task-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.task-result-preview {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  background: var(--color-background-tertiary);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  margin-top: var(--space-2);
+  border-left: 3px solid var(--color-success);
+}
+
+/* Task Status Colors */
+.task-pending {
+  border-color: var(--color-border);
+}
+
+.task-in-progress {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.task-completed {
+  border-color: var(--color-success);
+  background: var(--color-success-light);
+}
+
+.task-failed {
+  border-color: var(--color-error);
+  background: var(--color-error-light);
+}
+
+.task-cancelled {
+  border-color: var(--color-secondary);
+  background: var(--color-secondary-light);
+  opacity: 0.7;
+}
+
+/* Empty State */
+.task-graph-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+/* Execution Flow Details */
+.execution-flow-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.current-task-info,
+.agent-status {
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-base);
+  padding: var(--space-4);
+}
+
+.current-task-info h3,
+.agent-status h3 {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-3) 0;
+}
+
+.current-task-description {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-normal);
+}
+
+/* Agent Status */
+.agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.agent-status-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: background-color var(--transition-fast);
+}
+
+.agent-status-item.active {
+  background: var(--color-primary-light);
+}
+
+.agent-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-border);
+  transition: background-color var(--transition-fast);
+}
+
+.agent-status-item.active .agent-indicator {
+  background: var(--color-primary);
+  animation: pulse-dot 2s infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.agent-name {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+.agent-status-text {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  text-transform: capitalize;
+}
+
+/* Loading State */
+.execution-flow-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+  color: var(--color-text-secondary);
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: var(--space-4);
+}
+
+/* Error State */
+.execution-flow-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+  text-align: center;
+}
+
+.error-icon {
+  font-size: 3rem;
+  margin-bottom: var(--space-4);
+}
+
+.execution-flow-error h3 {
+  color: var(--color-error);
+  margin-bottom: var(--space-2);
+}
+
+.error-message {
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-4);
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .execution-flow-content {
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+  }
+  
+  .execution-flow-details {
+    order: -1;
+  }
+}
+
+@media (max-width: 768px) {
+  .execution-flow-header {
+    flex-direction: column;
+    gap: var(--space-4);
+    align-items: stretch;
+  }
+  
+  .execution-flow-controls {
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+  
+  .execution-flow-content {
+    padding: var(--space-4);
+  }
+  
+  .task-node {
+    min-width: 150px;
+    max-width: 200px;
+  }
+  
+  .task-level {
+    justify-content: flex-start;
+  }
+  
+  .task-graph.mobile-layout .task-level {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .task-graph.mobile-layout .task-node {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .execution-flow-header,
+  .execution-flow-progress,
+  .execution-flow-content {
+    padding: var(--space-3);
+  }
+  
+  .execution-flow-controls {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  
+  .progress-text {
+    flex-direction: column;
+    gap: var(--space-1);
+    text-align: center;
+  }
+  
+  .task-node {
+    min-width: unset;
+    max-width: 100%;
+  }
+  
+  .execution-flow-details {
+    gap: var(--space-4);
+  }
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill::after,
+  .task-node.active,
+  .agent-indicator,
+  .loading-spinner {
+    animation: none;
+  }
+  
+  .task-node {
+    transition: none;
+  }
+  
+  .task-node:hover {
+    transform: none;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .task-node {
+    border-width: 3px;
+  }
+  
+  .task-node.active {
+    border-width: 4px;
+  }
+  
+  .progress-fill {
+    background: var(--color-primary);
+  }
+}
+
+/* Print styles */
+@media print {
+  .execution-flow-controls {
+    display: none;
+  }
+  
+  .execution-flow-loading,
+  .execution-flow-error {
+    display: none;
+  }
+  
+  .task-node {
+    break-inside: avoid;
+  }
+}

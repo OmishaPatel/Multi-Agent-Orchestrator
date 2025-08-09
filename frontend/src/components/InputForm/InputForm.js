@@ -3,7 +3,7 @@
  * Handles user request submission with validation, error handling, and loading states
  */
 
-import { DOMUtils } from '../../main.js';
+import { DOMUtils } from '../../utils/dom.js';
 
 export class InputForm {
     constructor(appState, apiClient) {
