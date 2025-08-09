@@ -10,6 +10,7 @@ from typing import Dict, Any, Optional, List
 from src.config.settings import get_settings
 from src.utils.logging_config import get_api_logger, RequestLogger, log_api_request
 from src.graph.state import AgentState, SubTask, TaskType,StateManager, TaskStatus, ApprovalStatus, TimestampUtils
+from src.core.redis_state_manager import RedisStateManager
 
 router = APIRouter()
 logger = get_api_logger("workflow")
@@ -356,8 +357,21 @@ async def get_workflow_status(
                 )
             # Test thread IDs are allowed to pass through
         
-        # Get workflow status from factory
-        status_data = workflow_factory.get_workflow_status(thread_id)
+        # Get workflow status from redis
+        try:
+            redis_manager = RedisStateManager()
+            status_data = redis_manager.get_state(thread_id)
+            if not status_data:
+                # Fallback to workflow factory only if Redis has no data
+                logger.info(f"No Redis state found for {thread_id}, checking workflow factory")
+                status_data = workflow_factory.get_workflow_status(thread_id)
+            else:
+                logger.debug(f"Retrieved status from Redis for {thread_id}")
+                
+        except Exception as e:
+            logger.error(f"Error reading from Redis for {thread_id}: {e}")
+            # Fallback to workflow factory
+            status_data = workflow_factory.get_workflow_status(thread_id)
         
         if not status_data or status_data.get("status") == "not_found":
             logger.warning(f"Workflow {thread_id} not found")
