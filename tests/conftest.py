@@ -35,7 +35,9 @@ def sample_agent_state():
                 description="Test task 1",
                 dependencies=[],
                 status="pending",
-                result=None
+                result=None,
+                started_at=None,
+                completed_at=None
             ),
             SubTask(
                 id=2,
@@ -43,7 +45,9 @@ def sample_agent_state():
                 description="Test task 2", 
                 dependencies=[1],
                 status="pending",
-                result=None
+                result=None,
+                started_at=None,
+                completed_at=None
             )
         ],
         task_results={},

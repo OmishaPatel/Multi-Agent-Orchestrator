@@ -50,7 +50,9 @@ def sample_plan():
             "description": "Research latest AI developments",
             "dependencies": [],
             "status": TaskStatus.PENDING,
-            "result": None
+            "result": None,
+            "started_at": None,
+            "completed_at": None
         },
         {
             "id": 2,
@@ -58,7 +60,9 @@ def sample_plan():
             "description": "Analyze research findings",
             "dependencies": [1],
             "status": TaskStatus.PENDING,
-            "result": None
+            "result": None,
+            "started_at": None,
+            "completed_at": None
         }
     ]
 

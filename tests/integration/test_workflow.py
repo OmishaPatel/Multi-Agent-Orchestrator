@@ -20,7 +20,9 @@ class TestWorkflowIntegration:
                 'description': 'Execute Python calculation',
                 'dependencies': [],
                 'status': 'pending',
-                'result': None
+                'result': None,
+                'started_at': None,
+                'completed_at': None
             }
             state['plan'].append(code_task)
             
@@ -105,7 +107,9 @@ class TestWorkflowIntegration:
                     'description': 'Research statistical methods',
                     'dependencies': [],
                     'status': 'pending',
-                    'result': None
+                    'result': None,
+                    'started_at': None,
+                    'completed_at': None
                 },
                 {
                     'id': 2,
@@ -113,7 +117,9 @@ class TestWorkflowIntegration:
                     'description': 'Generate sample dataset',
                     'dependencies': [1],
                     'status': 'pending',
-                    'result': None
+                    'result': None,
+                    'started_at': None,
+                    'completed_at': None
                 },
                 {
                     'id': 3,
@@ -121,7 +127,9 @@ class TestWorkflowIntegration:
                     'description': 'Calculate mean and standard deviation',
                     'dependencies': [2],
                     'status': 'pending',
-                    'result': None
+                    'result': None,
+                    'started_at': None,
+                    'completed_at': None
                 },
                 {
                     'id': 4,
@@ -129,7 +137,9 @@ class TestWorkflowIntegration:
                     'description': 'Summarize results',
                     'dependencies': [3],
                     'status': 'pending',
-                    'result': None
+                    'result': None,
+                    'started_at': None,
+                    'completed_at': None
                 }
             ]
             state['plan'] = plan
@@ -192,7 +202,9 @@ class TestErrorHandlingIntegration:
                 'description': 'Execute failing code',
                 'dependencies': [],
                 'status': 'pending',
-                'result': None
+                'result': None,
+                'started_at': None,
+                'completed_at': None
             }
             state['plan'] = [failing_task]
             

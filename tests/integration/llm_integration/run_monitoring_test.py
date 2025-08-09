@@ -23,13 +23,11 @@ warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", message=".*Pydantic.*")
 warnings.filterwarnings("ignore", message=".*pkg_resources.*")
 warnings.filterwarnings("ignore", message=".*google.*")
-warnings.filterwarnings("ignore", message=".*mlflow.*")
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 from core.monitoring.model_monitor import SimpleModelMonitor
-from core.monitoring.mlflow import SimpleMLflowTracker
 from core.llm_wrappers.monitored_llm import SimpleMonitoredLLM
 
 async def check_ollama_server():
@@ -90,7 +88,6 @@ async def test_monitoring_integration():
             model_name=test_model,
             agent_type="planning",
             model_monitor=monitor,
-            enable_mlflow=False,
             base_url="http://localhost:11434",
             timeout=30.0
         )
@@ -159,43 +156,6 @@ async def test_monitoring_integration():
         else:
             print("✓ No alerts generated")
         
-        # Test MLflow integration
-        print("Testing MLflow integration...")
-        mlflow_tracker = SimpleMLflowTracker(
-            tracking_uri=f"file://{temp_dir}/mlflow",
-            experiment_name="test-integration"
-        )
-        
-        # Test basic MLflow functionality
-        run_id = mlflow_tracker.start_run("test-run")
-        mlflow_tracker.log_model_info(test_model, "development", "planning")
-        mlflow_tracker.log_basic_metrics({
-            "latency": 2.5,
-            "total_tokens": 100,
-            "tokens_per_second": 40.0
-        })
-        mlflow_tracker.end_run()
-        print(f"✓ MLflow run completed: {run_id}")
-        
-        # Test monitored LLM with MLflow enabled
-        print("Testing monitored LLM with MLflow...")
-        mlflow_llm = SimpleMonitoredLLM(
-            model_name=test_model,
-            agent_type="planning",
-            model_monitor=monitor,
-            enable_mlflow=True,
-            base_url="http://localhost:11434",
-            timeout=30.0
-        )
-        
-        # Override with test MLflow tracker
-        mlflow_llm.mlflow_tracker = mlflow_tracker
-        
-        try:
-            response = await mlflow_llm._acall("Say goodbye", max_tokens=5)
-            print(f"✓ MLflow-enabled inference: '{response}'")
-        except Exception as e:
-            print(f"⚠️  MLflow inference failed: {e}")
         
         monitor.stop_monitoring()
         print("\n🎉 All monitoring integration tests passed!")

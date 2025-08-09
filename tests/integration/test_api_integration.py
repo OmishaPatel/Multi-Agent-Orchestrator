@@ -392,12 +392,13 @@ class TestAPIIntegration:
             "final_report": sample_workflow_result["result"]["final_report"]
         }
         
-        # Mock the WorkflowFactory class at the module level where it's imported
-        with patch('src.api.routes.workflow.WorkflowFactory') as mock_factory_class:
-            mock_factory_instance = Mock()
-            mock_factory_instance.get_workflow_status.return_value = mock_status_data
-            mock_factory_instance.checkpointing_type = "hybrid"
-            mock_factory_class.return_value = mock_factory_instance
+        # Override the dependency injection
+        from src.api.routes.workflow import get_workflow_factory
+        client.app.dependency_overrides[get_workflow_factory] = lambda: mock_workflow_factory
+        
+        try:
+            mock_workflow_factory.get_workflow_status.return_value = mock_status_data
+            mock_workflow_factory.checkpointing_type = "hybrid"
             
             response = client.get(f"/api/v1/status/{thread_id}")
             
@@ -428,6 +429,8 @@ class TestAPIIntegration:
             
             # Verify timestamps
             assert "last_updated" in data
+        finally:
+            client.app.dependency_overrides.clear()
     
     def test_status_endpoint_workflow_pending_approval(self, client, mock_workflow_factory, sample_pending_approval_result):
         """Test /status endpoint for workflow pending approval"""
@@ -448,12 +451,13 @@ class TestAPIIntegration:
             "final_report": sample_pending_approval_result["result"]["final_report"]
         }
         
-        # Mock the WorkflowFactory class at the module level where it's imported
-        with patch('src.api.routes.workflow.WorkflowFactory') as mock_factory_class:
-            mock_factory_instance = Mock()
-            mock_factory_instance.get_workflow_status.return_value = mock_status_data
-            mock_factory_instance.checkpointing_type = "hybrid"
-            mock_factory_class.return_value = mock_factory_instance
+        # Override the dependency injection
+        from src.api.routes.workflow import get_workflow_factory
+        client.app.dependency_overrides[get_workflow_factory] = lambda: mock_workflow_factory
+        
+        try:
+            mock_workflow_factory.get_workflow_status.return_value = mock_status_data
+            mock_workflow_factory.checkpointing_type = "hybrid"
             
             response = client.get(f"/api/v1/status/{thread_id}")
             
@@ -477,6 +481,8 @@ class TestAPIIntegration:
             tasks = data["tasks"]
             assert len(tasks) == 3
             assert all(task["status"] == "pending" for task in tasks)
+        finally:
+            client.app.dependency_overrides.clear()
     
     def test_status_endpoint_workflow_in_progress(self, client, mock_workflow_factory, sample_in_progress_result):
         """Test /status endpoint for workflow with tasks in progress"""
@@ -497,12 +503,13 @@ class TestAPIIntegration:
             "final_report": sample_in_progress_result["result"]["final_report"]
         }
         
-        # Mock the WorkflowFactory class at the module level where it's imported
-        with patch('src.api.routes.workflow.WorkflowFactory') as mock_factory_class:
-            mock_factory_instance = Mock()
-            mock_factory_instance.get_workflow_status.return_value = mock_status_data
-            mock_factory_instance.checkpointing_type = "hybrid"
-            mock_factory_class.return_value = mock_factory_instance
+        # Override the dependency injection
+        from src.api.routes.workflow import get_workflow_factory
+        client.app.dependency_overrides[get_workflow_factory] = lambda: mock_workflow_factory
+        
+        try:
+            mock_workflow_factory.get_workflow_status.return_value = mock_status_data
+            mock_workflow_factory.checkpointing_type = "hybrid"
             
             response = client.get(f"/api/v1/status/{thread_id}")
             
@@ -537,6 +544,8 @@ class TestAPIIntegration:
             assert len(completed_tasks) == 1
             assert len(in_progress_tasks) == 1
             assert len(pending_tasks) == 1
+        finally:
+            client.app.dependency_overrides.clear()
     
     def test_status_endpoint_invalid_thread_id(self, client, mock_workflow_factory):
         """Test /status endpoint with non-existent thread_id"""
@@ -544,11 +553,11 @@ class TestAPIIntegration:
         thread_id = "test-non-existent-thread"
         
         # Mock the WorkflowFactory class at the module level where it's imported
-        with patch('src.api.routes.workflow.WorkflowFactory') as mock_factory_class:
+        with patch('src.api.routes.workflow.get_workflow_factory') as mock_get_factory:
             mock_factory_instance = Mock()
             mock_factory_instance.get_workflow_status.return_value = {"status": "not_found"}
             mock_factory_instance.checkpointing_type = "hybrid"
-            mock_factory_class.return_value = mock_factory_instance
+            mock_get_factory.return_value = mock_factory_instance
             
             response = client.get(f"/api/v1/status/{thread_id}")
             
@@ -572,21 +581,24 @@ class TestAPIIntegration:
         
         thread_id = "test-thread-error"
         
-        # Mock the WorkflowFactory class at the module level where it's imported
-        with patch('src.api.routes.workflow.WorkflowFactory') as mock_factory_class:
-            mock_factory_instance = Mock()
-            mock_factory_instance.get_workflow_status.return_value = {
+        # Override the dependency injection
+        from src.api.routes.workflow import get_workflow_factory
+        client.app.dependency_overrides[get_workflow_factory] = lambda: mock_workflow_factory
+        
+        try:
+            mock_workflow_factory.get_workflow_status.return_value = {
                 "status": "error",
                 "error": "Redis connection failed"
             }
-            mock_factory_instance.checkpointing_type = "hybrid"
-            mock_factory_class.return_value = mock_factory_instance
+            mock_workflow_factory.checkpointing_type = "hybrid"
             
             response = client.get(f"/api/v1/status/{thread_id}")
             
             assert response.status_code == 500
             data = response.json()
             assert "Error retrieving workflow status" in data["detail"]
+        finally:
+            client.app.dependency_overrides.clear()
     
     def test_status_endpoint_different_checkpointing_types(self, client, mock_workflow_factory):
         """Test /status endpoint with different checkpointing configurations"""
@@ -601,12 +613,13 @@ class TestAPIIntegration:
             "note": "Limited status info available with memory checkpointing"
         }
         
-        # Mock the WorkflowFactory class at the module level where it's imported
-        with patch('src.api.routes.workflow.WorkflowFactory') as mock_factory_class:
-            mock_factory_instance = Mock()
-            mock_factory_instance.get_workflow_status.return_value = mock_status_data
-            mock_factory_instance.checkpointing_type = "memory"
-            mock_factory_class.return_value = mock_factory_instance
+        # Override the dependency injection
+        from src.api.routes.workflow import get_workflow_factory
+        client.app.dependency_overrides[get_workflow_factory] = lambda: mock_workflow_factory
+        
+        try:
+            mock_workflow_factory.get_workflow_status.return_value = mock_status_data
+            mock_workflow_factory.checkpointing_type = "memory"
             
             response = client.get(f"/api/v1/status/{thread_id}")
             
@@ -614,6 +627,8 @@ class TestAPIIntegration:
             data = response.json()
             assert data["checkpointing_type"] == "memory"
             assert data["status"] == "planning"  # Default when no plan available
+        finally:
+            client.app.dependency_overrides.clear()
     
     def test_status_endpoint_progress_calculation_edge_cases(self, client, mock_workflow_factory):
         """Test progress calculation with edge cases"""
@@ -634,12 +649,13 @@ class TestAPIIntegration:
             "final_report": None
         }
         
-        # Mock the WorkflowFactory class at the module level where it's imported
-        with patch('src.api.routes.workflow.WorkflowFactory') as mock_factory_class:
-            mock_factory_instance = Mock()
-            mock_factory_instance.get_workflow_status.return_value = mock_status_data
-            mock_factory_instance.checkpointing_type = "hybrid"
-            mock_factory_class.return_value = mock_factory_instance
+        # Override the dependency injection
+        from src.api.routes.workflow import get_workflow_factory
+        client.app.dependency_overrides[get_workflow_factory] = lambda: mock_workflow_factory
+        
+        try:
+            mock_workflow_factory.get_workflow_status.return_value = mock_status_data
+            mock_workflow_factory.checkpointing_type = "hybrid"
             
             response = client.get(f"/api/v1/status/{thread_id}")
             
@@ -652,6 +668,8 @@ class TestAPIIntegration:
             assert progress["completion_percentage"] == 0.0
             assert data["current_task"] is None
             assert len(data["tasks"]) == 0
+        finally:
+            client.app.dependency_overrides.clear()
 
     # ==================== /approve Endpoint Tests ====================
     
@@ -952,22 +970,25 @@ class TestAPIIntegration:
                 returned_thread_id = run_response.json()["thread_id"]
         
         # Step 2: Check status - pending approval
-        with patch('src.api.routes.workflow.WorkflowFactory') as mock_factory_class:
-            mock_factory_instance = Mock()
-            mock_factory_instance.get_workflow_status.return_value = {
+        from src.api.routes.workflow import get_workflow_factory
+        client.app.dependency_overrides[get_workflow_factory] = lambda: mock_workflow_factory
+        
+        try:
+            mock_workflow_factory.get_workflow_status.return_value = {
                 "thread_id": thread_id,
                 "status": "pending_approval",
                 "human_approval_status": "pending",
                 "plan": [{"id": 1, "type": "research", "description": "Test task", "status": "pending", "dependencies": []}]
             }
-            mock_factory_instance.checkpointing_type = "hybrid"
-            mock_factory_class.return_value = mock_factory_instance
+            mock_workflow_factory.checkpointing_type = "hybrid"
             
             status_response = client.get(f"/api/v1/status/{thread_id}")
             
             assert status_response.status_code == 200
             status_data = status_response.json()
             assert status_data["status"] == "pending_approval"
+        finally:
+            client.app.dependency_overrides.clear()
         
         # Step 3: Approve the plan
         with patch('src.api.routes.workflow.process_approval_background') as mock_approval_bg:
@@ -998,9 +1019,11 @@ class TestAPIIntegration:
                 client.app.dependency_overrides.clear()
         
         # Step 4: Check status - in progress (after approval)
-        with patch('src.api.routes.workflow.WorkflowFactory') as mock_factory_class:
-            mock_factory_instance = Mock()
-            mock_factory_instance.get_workflow_status.return_value = {
+        from src.api.routes.workflow import get_workflow_factory
+        client.app.dependency_overrides[get_workflow_factory] = lambda: mock_workflow_factory
+        
+        try:
+            mock_workflow_factory.get_workflow_status.return_value = {
                 "thread_id": thread_id,
                 "status": "in_progress",
                 "human_approval_status": "approved",
@@ -1010,8 +1033,7 @@ class TestAPIIntegration:
                 "messages": ["Plan approved", "Task 1 in progress"],
                 "final_report": None
             }
-            mock_factory_instance.checkpointing_type = "hybrid"
-            mock_factory_class.return_value = mock_factory_instance
+            mock_workflow_factory.checkpointing_type = "hybrid"
             
             status_response_2 = client.get(f"/api/v1/status/{thread_id}")
             
@@ -1019,11 +1041,15 @@ class TestAPIIntegration:
             status_data_2 = status_response_2.json()
             assert status_data_2["status"] == "in_progress"
             assert status_data_2["human_approval_status"] == "approved"
+        finally:
+            client.app.dependency_overrides.clear()
         
         # Step 5: Check final status - completed
-        with patch('src.api.routes.workflow.WorkflowFactory') as mock_factory_class:
-            mock_factory_instance = Mock()
-            mock_factory_instance.get_workflow_status.return_value = {
+        from src.api.routes.workflow import get_workflow_factory
+        client.app.dependency_overrides[get_workflow_factory] = lambda: mock_workflow_factory
+        
+        try:
+            mock_workflow_factory.get_workflow_status.return_value = {
                 "thread_id": thread_id,
                 "status": "completed",
                 "human_approval_status": "approved",
@@ -1033,8 +1059,7 @@ class TestAPIIntegration:
                 "messages": ["Plan approved", "Task 1 completed", "Workflow completed"],
                 "final_report": "Final report: Research task completed successfully"
             }
-            mock_factory_instance.checkpointing_type = "hybrid"
-            mock_factory_class.return_value = mock_factory_instance
+            mock_workflow_factory.checkpointing_type = "hybrid"
             
             status_response_3 = client.get(f"/api/v1/status/{thread_id}")
             
@@ -1042,6 +1067,8 @@ class TestAPIIntegration:
             status_data_3 = status_response_3.json()
             assert status_data_3["status"] == "completed"
             assert status_data_3["final_report"] is not None
+        finally:
+            client.app.dependency_overrides.clear()
  
     def _create_test_workflow(self, client, request_text: str) -> str:
         """
