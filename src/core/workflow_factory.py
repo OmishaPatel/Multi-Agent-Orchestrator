@@ -350,6 +350,9 @@ class WorkflowFactory:
                             if self.checkpointing_type == "hybrid" and self.redis_state_manager:
                                 logger.debug(f"Saving workflow state to Redis after execution chunk {execution_count}")
                                 self.redis_state_manager.save_state(thread_id, result)
+                            elif self.redis_state_manager:
+                                logger.debug(f"Saving state for UI updates")
+                                self.redis_state_manager.save_state(thread_id,result)
                             
                             # Check for completion conditions
                             if result.get('final_report'):

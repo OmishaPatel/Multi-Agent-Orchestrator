@@ -5,6 +5,7 @@ from src.agents.planning_agent import PlanningAgent
 from src.agents.research_agent import ResearchAgent
 from src.agents.code_agent import CodeAgent
 from src.utils.logging_config import get_logger, get_workflow_logger, log_state_transition
+from src.core.redis_state_manager import RedisStateManager
 
 logger = get_workflow_logger()
 
@@ -27,7 +28,17 @@ class IntelligentWorkflowGraph:
         except Exception as e:
             logger.error(f"Failed to initialize workflow graph agents: {e}", exc_info=True)
             raise
-        
+    def _save_intermediate_state(self, state: AgentState, context: str = "") -> None:
+        try:
+            thread_id = state.get('thread_id', 'unknown')
+            from src.core.redis_state_manager import RedisStateManager
+            redis_manager = RedisStateManager()
+            if redis_manager:
+                redis_manager.save_state(thread_id, state)
+                logger.debug(f"Saved intermediate state: {context}")
+        except Exception as e:
+            logger.warning(f"Failed to save intermediate state ({context}): {e}")
+
     def create_workflow(self) -> StateGraph:
         """Create the main workflow graph with intelligent routing"""
         
@@ -225,7 +236,7 @@ class IntelligentWorkflowGraph:
                     TimestampUtils.set_task_started(task)
                     logger.info(f"Selected task {next_task_id}: {task['description']}")
                     break
-            
+            self._save_intermediate_state(new_state, f"task {next_task_id} started")
             return new_state
             
         except Exception as e:
@@ -260,7 +271,7 @@ class IntelligentWorkflowGraph:
                 if task['id'] == current_task['id']:
                     TimestampUtils.set_task_completed(task, result)
                     break
-            
+            self._save_intermediate_state(new_state, f"research task {current_task['id']} completed")
             log_state_transition("research_execution", "task_completed", thread_id)
             logger.info(f"Completed research task {current_task['id']}")
             return new_state
@@ -298,7 +309,7 @@ class IntelligentWorkflowGraph:
                 if task['id'] == current_task['id']:
                     TimestampUtils.set_task_completed(task, result)
                     break
-            
+            self._save_intermediate_state(new_state, f"code task {current_task['id']} completed")
             log_state_transition("code_execution", "task_completed", thread_id)
             logger.info(f"Completed code task {current_task['id']}")
             return new_state
@@ -448,7 +459,7 @@ class IntelligentWorkflowGraph:
             if task['id'] == current_task['id']:
                 TimestampUtils.set_task_failed(task, error_message)
                 break
-        
+        self._save_intermediate_state(new_state, f"task {current_task['id']} failed")
         return new_state
     
     def _generate_final_report(self, state: AgentState) -> str:
