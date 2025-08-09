@@ -1,8 +1,10 @@
 import './style.css'
 import './components/InputForm/input-form.css'
 import './components/ExecutionFlow/execution-flow.css'
+import './components/PlanVerification/PlanVerification.css'
 import { InputForm } from './components/InputForm/InputForm.js'
 import { ExecutionFlow } from './components/ExecutionFlow/ExecutionFlow.js'
+import { PlanVerification } from './components/PlanVerification/PlanVerification.js'
 import { apiClient, StatusPoller } from './utils/api.js'
 import { DOMUtils } from './utils/dom.js'
 
@@ -139,6 +141,10 @@ class ClarityApp {
       this.executionFlow.destroy();
       this.executionFlow = null;
     }
+    if (this.planVerification) {
+      this.planVerification.reset();
+      this.planVerification = null;
+    }
 
     // Create and render InputForm component
     if (!this.inputForm) {
@@ -239,10 +245,14 @@ class ClarityApp {
     // Clear existing content
     DOMUtils.clearElement(this.elements.content);
 
-    // Cleanup input form
+    // Cleanup other components
     if (this.inputForm) {
       this.inputForm.destroy();
       this.inputForm = null;
+    }
+    if (this.planVerification) {
+      this.planVerification.reset();
+      this.planVerification = null;
     }
 
     // Create and render ExecutionFlow component
@@ -391,209 +401,68 @@ class ClarityApp {
    * Render approval phase where user can approve or reject the plan
    */
   renderApproval() {
-    const plan = this.state.plan || [];
+    // Clear existing content
+    DOMUtils.clearElement(this.elements.content);
 
-    this.elements.content.innerHTML = `
-      <div class="card">
-        <div class="card-header">
-          <h2 class="card-title">Plan Approval Required</h2>
-          <p class="card-description">Please review the generated execution plan and approve or provide feedback</p>
-        </div>
-        
-        <div class="approval-content">
-          <div class="plan-preview">
-            <h3>Execution Plan</h3>
-            ${plan.length > 0 ? `
-              <div class="plan-steps">
-                ${plan.map((step, index) => `
-                  <div class="plan-step">
-                    <div class="step-number">${index + 1}</div>
-                    <div class="step-content">
-                      <h4>${step.description || step.name || `Step ${index + 1}`}</h4>
-                      <p class="step-type">Type: ${step.type || 'Unknown'}</p>
-                      ${step.dependencies && step.dependencies.length > 0 ?
-        `<p class="step-deps">Dependencies: ${step.dependencies.join(', ')}</p>` : ''
-      }
-                    </div>
-                  </div>
-                `).join('')}
-              </div>
-            ` : `
-              <p class="text-secondary">Plan details are being loaded...</p>
-            `}
-          </div>
-          
-          <div class="approval-actions">
-            <div class="approval-buttons">
-              <button class="btn btn-primary" id="approve-plan">
-                ✓ Approve Plan
-              </button>
-              <button class="btn btn-secondary" id="reject-plan">
-                ✗ Request Changes
-              </button>
-            </div>
-            
-            <div class="feedback-section" id="feedback-section" style="display: none;">
-              <label for="feedback-text" class="form-label">
-                What changes would you like to see?
-              </label>
-              <textarea 
-                id="feedback-text" 
-                class="form-textarea" 
-                rows="3" 
-                placeholder="Please describe what you'd like to change about this plan..."
-              ></textarea>
-              <div class="feedback-actions">
-                <button class="btn btn-primary" id="submit-feedback">
-                  Submit Feedback
-                </button>
-                <button class="btn btn-secondary" id="cancel-feedback">
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+    // Cleanup other components
+    if (this.inputForm) {
+      this.inputForm.destroy();
+      this.inputForm = null;
+    }
+    if (this.executionFlow) {
+      this.executionFlow.destroy();
+      this.executionFlow = null;
+    }
 
-        <!-- Debug info -->
-        <div class="text-center mt-4" style="border-top: 1px solid var(--color-border); padding-top: var(--space-4);">
-          <p class="text-xs text-secondary mb-2">Debug Controls (Development Only)</p>
-          <button class="btn btn-secondary btn-sm" id="debug-execution">
-            Skip to Execution View
-          </button>
-          <button class="btn btn-secondary btn-sm ml-2" id="debug-status">
-            Check Status
-          </button>
-        </div>
-      </div>
-    `;
+    // Create container for PlanVerification component
+    const planVerificationContainer = document.createElement('div');
+    this.elements.content.appendChild(planVerificationContainer);
 
-    // Add event listeners for approval actions
-    this.setupApprovalEventListeners();
+    // Create and initialize PlanVerification component
+    if (!this.planVerification) {
+      this.planVerification = new PlanVerification(planVerificationContainer);
+
+      // Listen for plan approval events
+      document.addEventListener('stateUpdate', (e) => {
+        if (e.detail.type === 'planApproval') {
+          this.handlePlanApproval(e.detail);
+        }
+      });
+    }
+
+    // Display the current plan
+    if (this.state.plan && this.state.threadId) {
+      // Trigger plan display through custom event
+      document.dispatchEvent(new CustomEvent('stateUpdate', {
+        detail: {
+          type: 'planReceived',
+          plan: this.state.plan,
+          threadId: this.state.threadId
+        }
+      }));
+    }
   }
 
   /**
-   * Setup event listeners for the approval interface
+   * Handle plan approval events from PlanVerification component
    */
-  setupApprovalEventListeners() {
-    const approveBtn = this.elements.content.querySelector('#approve-plan');
-    const rejectBtn = this.elements.content.querySelector('#reject-plan');
-    const feedbackSection = this.elements.content.querySelector('#feedback-section');
-    const feedbackText = this.elements.content.querySelector('#feedback-text');
-    const submitFeedbackBtn = this.elements.content.querySelector('#submit-feedback');
-    const cancelFeedbackBtn = this.elements.content.querySelector('#cancel-feedback');
+  handlePlanApproval(approvalData) {
+    const { approved, feedback, threadId } = approvalData;
 
-    // Debug buttons
-    const debugExecutionBtn = this.elements.content.querySelector('#debug-execution');
-    const debugStatusBtn = this.elements.content.querySelector('#debug-status');
+    console.log('Plan approval received:', { approved, feedback, threadId });
 
-    approveBtn?.addEventListener('click', async () => {
-      try {
-        approveBtn.disabled = true;
-        approveBtn.textContent = 'Approving...';
-
-        const result = await apiClient.submitApproval(this.state.threadId, true);
-        if (result.success) {
-          // Continue polling to see execution start
-          console.log('Plan approved successfully');
-        } else {
-          throw new Error(result.error || 'Failed to approve plan');
-        }
-      } catch (error) {
-        console.error('Approval failed:', error);
-        alert('Failed to approve plan: ' + error.message);
-        approveBtn.disabled = false;
-        approveBtn.textContent = '✓ Approve Plan';
-      }
-    });
-
-    rejectBtn?.addEventListener('click', () => {
-      DOMUtils.show(feedbackSection);
-      feedbackText.focus();
-    });
-
-    submitFeedbackBtn?.addEventListener('click', async () => {
-      const feedback = feedbackText.value.trim();
-      if (!feedback) {
-        alert('Please provide feedback about what you\'d like to change.');
-        return;
-      }
-
-      try {
-        submitFeedbackBtn.disabled = true;
-        submitFeedbackBtn.textContent = 'Submitting...';
-
-        const result = await apiClient.submitApproval(this.state.threadId, false, feedback);
-        if (result.success) {
-          // Reset to planning state to wait for new plan
-          this.state.setState({ status: 'planning' });
-          console.log('Feedback submitted successfully');
-        } else {
-          throw new Error(result.error || 'Failed to submit feedback');
-        }
-      } catch (error) {
-        console.error('Feedback submission failed:', error);
-        alert('Failed to submit feedback: ' + error.message);
-        submitFeedbackBtn.disabled = false;
-        submitFeedbackBtn.textContent = 'Submit Feedback';
-      }
-    });
-
-    cancelFeedbackBtn?.addEventListener('click', () => {
-      DOMUtils.hide(feedbackSection);
-      feedbackText.value = '';
-    });
-
-    // Debug event listeners (same as before)
-    debugExecutionBtn?.addEventListener('click', () => {
-      console.log('Debug: Manually transitioning to execution state');
+    if (approved) {
+      // Plan was approved, continue polling to see execution start
+      console.log('Plan approved, waiting for execution to begin');
+      // The status polling will automatically detect the transition to executing
+    } else {
+      // Plan was rejected with feedback, return to planning state
+      console.log('Plan rejected, returning to planning phase');
       this.state.setState({
-        status: 'executing',
-        plan: [
-          {
-            id: 1,
-            type: 'research',
-            description: 'Sample research task for testing',
-            dependencies: [],
-            status: 'completed',
-            result: 'Research completed successfully'
-          },
-          {
-            id: 2,
-            type: 'code',
-            description: 'Sample code generation task',
-            dependencies: [1],
-            status: 'in_progress',
-            result: null
-          },
-          {
-            id: 3,
-            type: 'analysis',
-            description: 'Sample analysis task',
-            dependencies: [1, 2],
-            status: 'pending',
-            result: null
-          }
-        ],
-        progress: 0.4
+        status: 'planning',
+        plan: null // Clear the rejected plan
       });
-    });
-
-    debugStatusBtn?.addEventListener('click', async () => {
-      console.log('Debug: Checking status manually');
-      if (this.state.threadId) {
-        try {
-          const status = await apiClient.getStatus(this.state.threadId);
-          console.log('Status response:', status);
-          alert(`Status: ${JSON.stringify(status, null, 2)}`);
-        } catch (error) {
-          console.error('Status check failed:', error);
-          alert(`Error: ${error.message}`);
-        }
-      } else {
-        alert('No thread ID available');
-      }
-    });
+    }
   }
 }
 

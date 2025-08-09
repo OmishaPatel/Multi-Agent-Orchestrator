@@ -8,6 +8,9 @@
 /* Import utilities */
 @import './styles/utilities/spacing.css';
 
+/* Import component styles */
+@import './components/PlanVerification/PlanVerification.css';
+
 /* Application-specific styles */
 .app {
   min-height: 100vh;
