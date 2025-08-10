@@ -74,7 +74,7 @@ def create_application() -> FastAPI:
         allow_headers=["*"],
     )
 
-    application.include_router(health.router, tags=["health"])
+    application.include_router(health.router, prefix="/api/v1", tags=["health"])
     application.include_router(workflow.router, prefix="/api/v1", tags=["Workflow"])
 
     @application.exception_handler(Exception)

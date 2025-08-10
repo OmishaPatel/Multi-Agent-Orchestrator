@@ -5,7 +5,7 @@ from src.config.settings import Settings, get_settings
 from src.config.redis_config import redis_manager
 
 
-router = APIRouter(prefix="/health")
+router = APIRouter()
 
 
 class HealthResponse(BaseModel):
@@ -19,7 +19,7 @@ class StatusResponse(BaseModel):
     version: str
     redis_connected: bool
 
-@router.get("", response_model=HealthResponse)
+@router.get("/health", response_model=HealthResponse)
 async def health_check(settings: Settings = Depends(get_settings)):
     return{
         "status": "ok",
@@ -28,7 +28,7 @@ async def health_check(settings: Settings = Depends(get_settings)):
     }
 
 
-@router.get("/status", response_model=StatusResponse)
+@router.get("/health/status", response_model=StatusResponse)
 async def status_check(settings: Settings = Depends(get_settings)):
     redis_connected = await redis_manager.health_check()
 
