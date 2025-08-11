@@ -1,9 +1,10 @@
-import { apiClient } from '../../utils/api.js';
 import { DOMUtils } from '../../utils/dom.js';
 
 export class PlanVerification {
-    constructor(container) {
+    constructor(container, eventBus, apiService) {
         this.container = container;
+        this.eventBus = eventBus;
+        this.apiService = apiService;
         this.currentPlan = null;
         this.threadId = null;
         this.feedbackText = '';
@@ -107,11 +108,9 @@ export class PlanVerification {
         approveButton.addEventListener('click', () => this.handleApproval(true));
         rejectButton.addEventListener('click', () => this.handleApproval(false));
 
-        // Listen for state updates
-        document.addEventListener('stateUpdate', (e) => {
-            if (e.detail.type === 'planReceived') {
-                this.displayPlan(e.detail.plan, e.detail.threadId);
-            }
+        // Listen for plan received events through event bus
+        this.eventBus.on('planReceived', (data) => {
+            this.displayPlan(data.plan, data.threadId);
         });
     }
 
@@ -281,46 +280,32 @@ export class PlanVerification {
         this.updateSubmissionState(true);
 
         try {
-            const requestData = {
-                approved: approved,
-                feedback: this.feedbackText.trim() || null
-            };
-
-            const response = await apiClient.submitApproval(
-                this.threadId,
-                requestData.approved,
-                requestData.feedback
+            this.showStatusMessage(
+                approved ? 'Submitting approval...' : 'Submitting feedback...',
+                'info'
             );
 
-            if (response.success) {
-                this.showStatusMessage(
-                    approved ? 'Plan approved! Execution starting...' : 'Feedback submitted. Generating new plan...',
-                    'success'
-                );
+            // Emit approval event through event bus for API service to handle
+            this.eventBus.emit('planApproval', {
+                threadId: this.threadId,
+                approved: approved,
+                feedback: this.feedbackText.trim() || null
+            });
 
-                // Update global state via custom event
-                document.dispatchEvent(new CustomEvent('stateUpdate', {
-                    detail: {
-                        type: 'planApproval',
-                        approved: approved,
-                        feedback: this.feedbackText,
-                        threadId: this.threadId
-                    }
-                }));
+            this.showStatusMessage(
+                approved ? 'Plan approved! Execution starting...' : 'Feedback submitted. Generating new plan...',
+                'success'
+            );
 
-                // Clear form if approved
-                if (approved) {
-                    this.clearForm();
-                }
-
-            } else {
-                throw new Error(response.error || 'Failed to submit approval');
+            // Clear form if approved
+            if (approved) {
+                this.clearForm();
             }
 
         } catch (error) {
             console.error('Approval submission error:', error);
             this.showStatusMessage(
-                `Error: ${error.message}. Please try again.`,
+                `Error: ${error.message || 'Failed to submit approval'}. Please try again.`,
                 'error'
             );
         } finally {
@@ -399,5 +384,13 @@ export class PlanVerification {
 
         const planDisplay = this.container.querySelector('#planDisplay');
         DOMUtils.clearElement(planDisplay);
+    }
+
+    destroy() {
+        this.reset();
+        // Remove any event listeners if needed
+        if (this.container && this.container.parentNode) {
+            this.container.parentNode.removeChild(this.container);
+        }
     }
 }

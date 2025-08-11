@@ -217,12 +217,21 @@ export class ApiClient {
      * Health check endpoint
      */
     async healthCheck() {
-        const response = await this.request('/health', {
-            method: 'GET',
-            timeout: 5000 // Shorter timeout for health checks
-        });
+        try {
+            const response = await this.request('/health', {
+                method: 'GET',
+                timeout: 5000 // Shorter timeout for health checks
+            });
 
-        return response;
+            return response;
+        } catch (error) {
+            console.error('[ApiClient] Health check failed:', error);
+            return {
+                success: false,
+                error: error.message || 'Health check failed',
+                status: error.status || 0
+            };
+        }
     }
 
     /**
@@ -257,7 +266,8 @@ export class ApiError extends Error {
 }
 
 /**
- * Polling utility for status updates
+ * Enhanced Polling Service for Real-time Status Updates
+ * Supports configurable intervals, intelligent backoff, and event-driven updates
  */
 export class StatusPoller {
     constructor(apiClient, threadId, onUpdate, options = {}) {
@@ -269,6 +279,15 @@ export class StatusPoller {
             maxAttempts: 300, // 10 minutes max
             backoffMultiplier: 1.1,
             maxInterval: 10000, // 10 seconds max
+            adaptivePolling: true, // Adjust interval based on status
+            statusIntervals: {
+                'planning': 3000,
+                'awaiting_approval': 10000, // Slower when waiting for user
+                'executing': 2000,
+                'completed': 0, // Stop polling
+                'failed': 0, // Stop polling
+                'cancelled': 0 // Stop polling
+            },
             ...options
         };
 
@@ -276,68 +295,213 @@ export class StatusPoller {
         this.attempts = 0;
         this.currentInterval = this.options.interval;
         this.timeoutId = null;
+        this.lastStatus = null;
+        this.consecutiveErrors = 0;
+        this.maxConsecutiveErrors = 10; // Increased tolerance for network issues
+
+        // Performance tracking
+        this.stats = {
+            totalRequests: 0,
+            successfulRequests: 0,
+            failedRequests: 0,
+            averageResponseTime: 0,
+            startTime: null,
+            lastRequestTime: null
+        };
     }
 
     start() {
         if (this.isPolling) {
+            console.warn('[StatusPoller] Already polling, ignoring start request');
             return;
         }
 
+        console.log(`[StatusPoller] Starting polling for thread ${this.threadId}`);
         this.isPolling = true;
         this.attempts = 0;
+        this.consecutiveErrors = 0;
         this.currentInterval = this.options.interval;
+        this.stats.startTime = Date.now();
         this.poll();
     }
 
     stop() {
+        if (!this.isPolling) {
+            return;
+        }
+
+        console.log(`[StatusPoller] Stopping polling for thread ${this.threadId}`);
         this.isPolling = false;
         if (this.timeoutId) {
             clearTimeout(this.timeoutId);
             this.timeoutId = null;
         }
+
+        // Log final stats
+        this.logStats();
     }
 
     async poll() {
         if (!this.isPolling || this.attempts >= this.options.maxAttempts) {
+            console.log(`[StatusPoller] Stopping: isPolling=${this.isPolling}, attempts=${this.attempts}/${this.options.maxAttempts}`);
             this.stop();
             return;
         }
 
+        // Check if approval state is locked (global check)
+        if (window.clarityApiService && window.clarityApiService.approvalStateLocked) {
+            console.log('[StatusPoller] Approval state locked - stopping polling');
+            this.stop();
+            return;
+        }
+
+        const requestStart = Date.now();
+        this.stats.totalRequests++;
+        this.stats.lastRequestTime = requestStart;
+
+        console.log(`[StatusPoller] Polling attempt ${this.attempts + 1} with thread ID: "${this.threadId}" (type: ${typeof this.threadId}, length: ${this.threadId?.length})`);
+
         try {
             const status = await this.api.getStatus(this.threadId);
+            const responseTime = Date.now() - requestStart;
+
+            // Update response time average
+            this.stats.averageResponseTime = (
+                (this.stats.averageResponseTime * (this.stats.successfulRequests)) + responseTime
+            ) / (this.stats.successfulRequests + 1);
 
             if (status.success) {
+                this.stats.successfulRequests++;
+                this.consecutiveErrors = 0;
+
+                console.log(`[StatusPoller] Poll successful - Status: ${status.status}, Progress: ${status.progress?.completion_percentage || 0}%`);
+
+                // Call update handler
                 this.onUpdate(status);
 
-                // Stop polling if workflow is complete or failed
-                if (['completed', 'failed', 'cancelled'].includes(status.status)) {
+                // Check if we should stop polling
+                if (this.shouldStopPolling(status.status)) {
+                    console.log(`[StatusPoller] Stopping polling due to final status: ${status.status}`);
                     this.stop();
                     return;
                 }
 
-                // Reset interval on successful request
-                this.currentInterval = this.options.interval;
+                // Adjust polling interval based on status
+                this.adjustPollingInterval(status.status);
+                this.lastStatus = status.status;
+
             } else {
-                // Increase interval on error (exponential backoff)
-                this.currentInterval = Math.min(
-                    this.currentInterval * this.options.backoffMultiplier,
-                    this.options.maxInterval
-                );
+                console.warn(`[StatusPoller] Poll failed with error: ${status.error}`);
+                this.handlePollingError(new Error(status.error || 'Status request failed'));
             }
 
         } catch (error) {
-            console.error('Polling error:', error);
-            this.currentInterval = Math.min(
-                this.currentInterval * this.options.backoffMultiplier,
-                this.options.maxInterval
-            );
+            console.error(`[StatusPoller] Poll exception:`, error);
+            this.handlePollingError(error);
         }
 
         this.attempts++;
 
+        // Schedule next poll if still active
         if (this.isPolling) {
+            console.log(`[StatusPoller] Scheduling next poll in ${this.currentInterval}ms`);
             this.timeoutId = setTimeout(() => this.poll(), this.currentInterval);
         }
+    }
+
+    /**
+     * Handle polling errors with exponential backoff
+     */
+    handlePollingError(error) {
+        this.stats.failedRequests++;
+        this.consecutiveErrors++;
+
+        console.error(`[StatusPoller] Polling error (${this.consecutiveErrors}/${this.maxConsecutiveErrors}):`, error);
+
+        // Stop polling if too many consecutive errors
+        if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
+            console.error('[StatusPoller] Too many consecutive errors, stopping polling');
+            this.stop();
+
+            // Notify about polling failure
+            this.onUpdate({
+                success: false,
+                error: 'Polling failed due to repeated errors',
+                pollingFailed: true
+            });
+            return;
+        }
+
+        // Increase interval on error (exponential backoff)
+        this.currentInterval = Math.min(
+            this.currentInterval * this.options.backoffMultiplier,
+            this.options.maxInterval
+        );
+    }
+
+    /**
+     * Adjust polling interval based on current status
+     */
+    adjustPollingInterval(status) {
+        if (!this.options.adaptivePolling) {
+            return;
+        }
+
+        const statusInterval = this.options.statusIntervals[status];
+        if (statusInterval !== undefined) {
+            this.currentInterval = statusInterval;
+        } else {
+            // Reset to default interval for unknown statuses
+            this.currentInterval = this.options.interval;
+        }
+    }
+
+    /**
+     * Check if polling should stop based on status
+     */
+    shouldStopPolling(status) {
+        const finalStatuses = ['completed', 'failed', 'cancelled'];
+        return finalStatuses.includes(status);
+    }
+
+    /**
+     * Update polling configuration
+     */
+    updateOptions(newOptions) {
+        this.options = { ...this.options, ...newOptions };
+        console.log('[StatusPoller] Options updated:', this.options);
+    }
+
+    /**
+     * Get current polling statistics
+     */
+    getStats() {
+        const now = Date.now();
+        const uptime = this.stats.startTime ? now - this.stats.startTime : 0;
+
+        return {
+            ...this.stats,
+            uptime,
+            isPolling: this.isPolling,
+            currentInterval: this.currentInterval,
+            consecutiveErrors: this.consecutiveErrors,
+            successRate: this.stats.totalRequests > 0
+                ? (this.stats.successfulRequests / this.stats.totalRequests) * 100
+                : 0
+        };
+    }
+
+    /**
+     * Log polling statistics
+     */
+    logStats() {
+        const stats = this.getStats();
+        console.log('[StatusPoller] Final statistics:', {
+            totalRequests: stats.totalRequests,
+            successRate: `${stats.successRate.toFixed(1)}%`,
+            averageResponseTime: `${stats.averageResponseTime.toFixed(0)}ms`,
+            uptime: `${(stats.uptime / 1000).toFixed(1)}s`
+        });
     }
 }
 

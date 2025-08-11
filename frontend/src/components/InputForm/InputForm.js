@@ -6,9 +6,9 @@
 import { DOMUtils } from '../../utils/dom.js';
 
 export class InputForm {
-    constructor(appState, apiClient) {
-        this.state = appState;
-        this.api = apiClient;
+    constructor(stateManager, apiService) {
+        this.stateManager = stateManager;
+        this.apiService = apiService;
         this.element = null;
         this.form = null;
         this.textarea = null;
@@ -227,19 +227,10 @@ export class InputForm {
         try {
             this.setLoadingState(true);
 
-            // Submit request to API
-            const response = await this.api.submitRequest(request);
+            // Submit request through API service
+            const response = await this.apiService.submitRequest(request);
 
             if (response.success) {
-                // Update application state
-                this.state.setState({
-                    status: 'planning',
-                    currentRequest: request,
-                    threadId: response.threadId,
-                    plan: null,
-                    results: {}
-                });
-
                 // Clear form on successful submission
                 this.clearForm();
 

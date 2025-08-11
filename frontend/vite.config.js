@@ -1,6 +1,11 @@
 import { defineConfig } from 'vite'
 
 export default defineConfig({
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./tests/setup.js']
+  },
   server: {
     port: 3000,
     host: true,
@@ -14,7 +19,7 @@ export default defineConfig({
       }
     }
   },
-  
+
   build: {
     outDir: 'dist',
     sourcemap: true,
@@ -28,7 +33,7 @@ export default defineConfig({
       }
     }
   },
-  
+
   css: {
     devSourcemap: true,
     preprocessorOptions: {
@@ -37,7 +42,7 @@ export default defineConfig({
       }
     }
   },
-  
+
   define: {
     __APP_VERSION__: JSON.stringify(process.env.npm_package_version),
   }

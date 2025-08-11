@@ -1,12 +1,15 @@
 export class FinalResult {
     constructor(container, result, options = {}) {
+        // Version 2.0 - Aggressive content cleaning
+        // Version 2.0 - Aggressive content cleaning
+        // Version 2.0 - Aggressive content cleaning
         this.container = container;
         this.result = result;
         this.options = {
             enableExport: true,
             enableSharing: true,
             showMetadata: true,
-            markdownRenderer: 'simple', // 'simple' or 'advanced'
+            markdownRenderer: 'simple',
             ...options
         };
 
@@ -132,6 +135,16 @@ export class FinalResult {
 
         let content = this.result.final_report || this.result.content || '';
 
+        console.log('FinalResult render called at:', new Date().toISOString()); // Debug
+        console.log('Original content length:', content.length);
+        console.log('Original content preview:', content.substring(0, 200));
+        if (content.includes('Type:') || content.includes('Status:') || content.includes('credibility')) {
+            console.log('WARNING: Content still contains metadata that should be removed!');
+        }
+
+        // Clean and format the content for better readability
+        content = this.cleanAndFormatContent(content);
+
         // Render markdown content
         if (this.options.markdownRenderer === 'advanced') {
             content = this.markdownParser.parseAdvanced(content);
@@ -141,19 +154,192 @@ export class FinalResult {
 
         this.contentElement.innerHTML = content;
 
+        // Add a visual indicator that our new version is working
+        const versionIndicator = document.createElement('div');
+        versionIndicator.style.cssText = 'position: fixed; top: 10px; right: 10px; background: #28a745; color: white; padding: 5px 10px; border-radius: 5px; font-size: 12px; z-index: 9999;';
+        versionIndicator.textContent = 'FinalResult v2.0 Active';
+        document.body.appendChild(versionIndicator);
+        setTimeout(() => versionIndicator.remove(), 3000);
+
+        // Add data attributes to task headers for better styling
+        this.enhanceTaskHeaders();
+
         // Add syntax highlighting for code blocks
         this.highlightCodeBlocks();
 
         // Add copy buttons to code blocks
         this.addCodeBlockCopyButtons();
+
+        // Add section dividers for better visual separation
+        this.addSectionDividers();
+
+        // Make source references clickable
+        this.makeSourceReferencesClickable();
+    }
+
+    // Source extraction methods removed - no longer processing source references
+
+    // Source extraction methods removed - no longer processing source references
+
+    /**
+     * Clean and format content to remove unnecessary metadata and improve readability
+     */
+    cleanAndFormatContent(content) {
+        if (!content) return '';
+
+        // Source extraction removed
+
+        const lines = content.split('\n');
+        const cleanedLines = [];
+        let skipUntilNextSection = false;
+        let skipConclusionSection = false;
+        let skipSourcesSection = false;
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const lowerLine = line.toLowerCase();
+
+            // Skip any line containing metadata we don't want
+            if (lowerLine.includes('type:') ||
+                lowerLine.includes('status:') ||
+                lowerLine.includes('result:') ||
+                lowerLine.includes('credibility') ||
+                lowerLine.includes('sources analyzed') ||
+                lowerLine.includes('enhanced tavily') ||
+                lowerLine.includes('execution date') ||
+                lowerLine.includes('original request')) {
+                continue;
+            }
+
+            // Skip conclusion section entirely
+            if (lowerLine.includes('conclusion') || lowerLine.includes('## conclusion')) {
+                skipConclusionSection = true;
+                continue;
+            }
+
+            // Stop skipping conclusion when we hit a new major section
+            if (skipConclusionSection && line.startsWith('##') && !lowerLine.includes('conclusion')) {
+                skipConclusionSection = false;
+            }
+
+            if (skipConclusionSection) {
+                continue;
+            }
+
+            // Skip original sources section (we'll add our own formatted one)
+            if (lowerLine.includes('sources:') || lowerLine.includes('## sources') || lowerLine.includes('### sources')) {
+                skipSourcesSection = true;
+                continue;
+            }
+
+            // Stop skipping sources when we hit a new major section
+            if (skipSourcesSection && line.startsWith('##') && !lowerLine.includes('source')) {
+                skipSourcesSection = false;
+            }
+
+            if (skipSourcesSection) {
+                continue;
+            }
+
+            // Start skipping when we hit Source Credibility Assessment
+            if (lowerLine.includes('source credibility assessment')) {
+                skipUntilNextSection = true;
+                continue;
+            }
+
+            // Stop skipping when we hit a new section (## or ###)
+            if (skipUntilNextSection && (line.startsWith('##') || line.startsWith('###'))) {
+                skipUntilNextSection = false;
+            }
+
+            // Skip lines while we're in a credibility section
+            if (skipUntilNextSection) {
+                continue;
+            }
+
+            // Transform task headers - extract original task name from the line (support both ## and ### headers)
+            if (line.match(/#{2,3}\s*✅?\s*Task\s*\d+:/)) {
+                const taskMatch = line.match(/#{2,3}\s*✅?\s*Task\s*(\d+):\s*(.+)/);
+                if (taskMatch) {
+                    const taskNum = taskMatch[1];
+                    const originalTaskName = taskMatch[2].trim();
+                    cleanedLines.push(`## 🎯 Task ${taskNum}: ${originalTaskName}`);
+                } else {
+                    // Fallback if regex doesn't match perfectly
+                    const taskNum = line.match(/\d+/)[0];
+                    cleanedLines.push(`## 🎯 Task ${taskNum}`);
+                }
+                continue;
+            }
+
+            // Additional catch for task headers without colons or different formats
+            if (line.match(/#{2,3}\s*✅?\s*Task\s*\d+\b/) && !line.includes(':')) {
+                const taskMatch = line.match(/#{2,3}\s*✅?\s*Task\s*(\d+)\s*(.*)$/);
+                if (taskMatch) {
+                    const taskNum = taskMatch[1];
+                    const taskDescription = taskMatch[2].trim();
+                    if (taskDescription) {
+                        cleanedLines.push(`## 🎯 Task ${taskNum}: ${taskDescription}`);
+                    } else {
+                        cleanedLines.push(`## 🎯 Task ${taskNum}`);
+                    }
+                } else {
+                    const taskNum = line.match(/\d+/)[0];
+                    cleanedLines.push(`## 🎯 Task ${taskNum}`);
+                }
+                continue;
+            }
+
+            // Transform summary header
+            if (line.match(/##\s*Summary/)) {
+                cleanedLines.push('## 📊 Executive Summary');
+                continue;
+            }
+
+            // Transform detailed results header
+            if (line.match(/##\s*Detailed Results/)) {
+                cleanedLines.push('## 📋 Detailed Analysis');
+                continue;
+            }
+
+            // Skip summary metadata lines
+            if (lowerLine.includes('total tasks:') ||
+                lowerLine.includes('completed:') ||
+                lowerLine.includes('failed:')) {
+                continue;
+            }
+
+            // Keep the line if it passed all filters
+            cleanedLines.push(line);
+        }
+
+        let cleanedContent = cleanedLines.join('\n')
+            // Clean up excessive whitespace - preserve paragraph breaks
+            .replace(/\n{4,}/g, '\n\n\n')  // Reduce 4+ line breaks to 3
+            .replace(/\n{3}/g, '\n\n')     // Reduce 3 line breaks to 2 (preserve paragraph spacing)
+            // Remove excessive spacing between sentences
+            .replace(/\.\s{3,}/g, '. ')
+            .replace(/\?\s{3,}/g, '? ')
+            .replace(/!\s{3,}/g, '! ')
+            // Remove source references from content
+            .replace(/\(\s*[Ss]ource\s+\d+\s*\)/g, '')
+            .replace(/\b[Ss]ource\s+\d+\b/g, '');
+
+        // Sources section removed - no longer displaying source references
+
+        // Final check removed - no longer creating sources sections
+
+        console.log('Cleaned content length:', cleanedContent.length);
+        console.log('Cleaned content preview:', cleanedContent.substring(0, 200));
+        return cleanedContent.trim();
     }
 
     highlightCodeBlocks() {
-        const codeBlocks = this.contentElement.querySelectorAll('pre code');
-        codeBlocks.forEach(block => {
-            // Simple syntax highlighting (could be enhanced with a library)
-            this.applySyntaxHighlighting(block);
-        });
+        // Syntax highlighting disabled to remove keyword annotations
+        // const codeBlocks = this.contentElement.querySelectorAll('pre code');
+        // codeBlocks.forEach(block => {
+        //     this.applySyntaxHighlighting(block);
+        // });
     }
 
     applySyntaxHighlighting(codeBlock) {
@@ -162,7 +348,7 @@ export class FinalResult {
         // Simple Python syntax highlighting
         if (codeBlock.className.includes('python')) {
             content = content
-                .replace(/\b(def|class|import|from|if|else|elif|for|while|try|except|finally|with|as|return|yield|break|continue|pass|lambda|and|or|not|in|is|None|True|False)\b/g, '<span class="keyword">$1</span>')
+
                 .replace(/\b(\d+\.?\d*)\b/g, '<span class="number">$1</span>')
                 .replace(/(["'])((?:\\.|(?!\1)[^\\])*?)\1/g, '<span class="string">$1$2$1</span>')
                 .replace(/#.*/g, '<span class="comment">$&</span>');
@@ -171,7 +357,7 @@ export class FinalResult {
         // Simple JavaScript syntax highlighting
         if (codeBlock.className.includes('javascript') || codeBlock.className.includes('js')) {
             content = content
-                .replace(/\b(function|const|let|var|if|else|for|while|do|switch|case|default|try|catch|finally|return|break|continue|class|extends|import|export|from|async|await|new|this|super|static|get|set)\b/g, '<span class="keyword">$1</span>')
+
                 .replace(/\b(\d+\.?\d*)\b/g, '<span class="number">$1</span>')
                 .replace(/(["'`])((?:\\.|(?!\1)[^\\])*?)\1/g, '<span class="string">$1$2$1</span>')
                 .replace(/\/\/.*/g, '<span class="comment">$&</span>')
@@ -207,6 +393,127 @@ export class FinalResult {
         });
     }
 
+    enhanceTaskHeaders() {
+        const taskHeaders = this.contentElement.querySelectorAll('h2');
+        taskHeaders.forEach(header => {
+            const headerText = header.textContent.toLowerCase();
+            console.log('Processing header:', header.textContent);
+
+            // More comprehensive task detection
+            if (headerText.includes('task') && (
+                headerText.includes('🎯') ||
+                headerText.match(/task\s*\d+/) ||
+                headerText.match(/\d+\s*:.*/) // Catch "Task 2: Description" patterns
+            )) {
+                console.log('Setting data-task=true for:', header.textContent);
+                header.setAttribute('data-task', 'true');
+                // Force apply task styling directly via JavaScript as backup
+                header.style.background = 'linear-gradient(135deg, #6c757d, #868e96)';
+                header.style.color = 'white';
+                header.style.border = 'none';
+                header.style.borderBottom = 'none';
+                header.style.padding = 'var(--space-3) var(--space-4)';
+                header.style.borderRadius = 'var(--radius-md)';
+                header.style.margin = 'var(--space-2) 0 var(--space-1) 0';
+                header.style.fontSize = '1.1rem';
+                header.style.fontWeight = '600';
+                header.style.boxShadow = 'var(--shadow-sm)';
+            } else if (header.textContent.includes('📊 Executive Summary')) {
+                header.setAttribute('data-summary', 'true');
+            } else if (header.textContent.includes('📋 Detailed Analysis')) {
+                header.setAttribute('data-details', 'true');
+            }
+            // Sources section removed - no longer processing source headers
+        });
+    }
+
+    addSectionDividers() {
+        const headers = this.contentElement.querySelectorAll('h2');
+        headers.forEach((header, index) => {
+            if (index > 0) { // Don't add divider before first header
+                const divider = document.createElement('div');
+                divider.className = 'section-divider';
+                divider.innerHTML = '<hr style="border: none; height: 1px; background: var(--color-border); margin: var(--spacing-xl) 0;">';
+                header.parentNode.insertBefore(divider, header);
+            }
+        });
+    }
+
+    makeSourceReferencesClickable() {
+        // Find all text nodes and make source references clickable
+        const walker = document.createTreeWalker(
+            this.contentElement,
+            NodeFilter.SHOW_TEXT,
+            null,
+            false
+        );
+
+        const textNodes = [];
+        let node;
+        while (node = walker.nextNode()) {
+            textNodes.push(node);
+        }
+
+        textNodes.forEach(textNode => {
+            const text = textNode.textContent;
+            // Match patterns like "Source 1", "source 6", "(Source 2)", etc.
+            const sourcePattern = /\b(?:\()?[Ss]ource\s+(\d+)(?:\))?/g;
+
+            if (sourcePattern.test(text)) {
+                const newHTML = text.replace(sourcePattern, (match, num) => {
+                    return `<span class="source-reference" data-source="${num}" title="Click to jump to source ${num}">${match}</span>`;
+                });
+
+                if (newHTML !== text) {
+                    const wrapper = document.createElement('span');
+                    wrapper.innerHTML = newHTML;
+                    textNode.parentNode.replaceChild(wrapper, textNode);
+                }
+            }
+        });
+
+        // Add click handlers to source references
+        this.contentElement.querySelectorAll('.source-reference').forEach(ref => {
+            ref.addEventListener('click', (e) => {
+                e.preventDefault();
+                const sourceNum = e.target.getAttribute('data-source');
+                const sourcesSection = this.contentElement.querySelector('h2[data-sources="true"]');
+
+                console.log('Source reference clicked:', sourceNum);
+                console.log('Sources section found:', !!sourcesSection);
+
+                if (sourcesSection) {
+                    sourcesSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    // Highlight the specific source
+                    const sourcesList = sourcesSection.nextElementSibling;
+                    console.log('Sources list found:', !!sourcesList);
+
+                    if (sourcesList) {
+                        const sourceItem = sourcesList.querySelector(`li:nth-child(${sourceNum})`);
+                        console.log('Source item found:', !!sourceItem);
+
+                        if (sourceItem) {
+                            sourceItem.style.backgroundColor = '#fff3cd';
+                            sourceItem.style.border = '2px solid #ffc107';
+                            sourceItem.style.borderRadius = '4px';
+                            sourceItem.style.padding = '8px';
+                            setTimeout(() => {
+                                sourceItem.style.backgroundColor = '';
+                                sourceItem.style.border = '';
+                                sourceItem.style.borderRadius = '';
+                                sourceItem.style.padding = '';
+                            }, 3000);
+                        }
+                    }
+                } else {
+                    // If no sources section exists, show a message
+                    console.log('No sources section found, showing alert');
+                    alert(`Source ${sourceNum} was referenced but no sources section is available. This may indicate the source information was not included in the original response.`);
+                }
+            });
+        });
+    }
+
     async handleExport() {
         if (!this.exportButton) return;
 
@@ -214,10 +521,7 @@ export class FinalResult {
         this.exportButton.innerHTML = '<span class="button-icon">⏳</span>Exporting...';
 
         try {
-            // Create export content
             const exportContent = this.generateExportContent();
-
-            // Create and download file
             const blob = new Blob([exportContent], { type: 'text/markdown' });
             const url = URL.createObjectURL(blob);
 
@@ -230,7 +534,6 @@ export class FinalResult {
 
             URL.revokeObjectURL(url);
 
-            // Show success feedback
             this.exportButton.innerHTML = '<span class="button-icon">✅</span>Exported!';
             setTimeout(() => {
                 this.exportButton.innerHTML = '<span class="button-icon">📄</span>Export Report';
@@ -273,14 +576,12 @@ export class FinalResult {
 
         try {
             if (navigator.share) {
-                // Use native sharing if available
                 await navigator.share({
                     title: 'Clarity.ai Report',
                     text: 'Check out this AI-generated report',
                     url: window.location.href
                 });
             } else {
-                // Fallback: copy URL to clipboard
                 await navigator.clipboard.writeText(window.location.href);
                 this.shareButton.innerHTML = '<span class="button-icon">✅</span>URL Copied!';
                 setTimeout(() => {
@@ -293,7 +594,6 @@ export class FinalResult {
     }
 
     handlePrint() {
-        // Create print-friendly version
         const printWindow = window.open('', '_blank');
         const printContent = this.generatePrintContent();
 
@@ -395,13 +695,26 @@ export class FinalResult {
 }
 
 /**
- * Simple Markdown Parser - Lightweight markdown rendering
+ * Enhanced Simple Markdown Parser - Improved markdown rendering with better content cleaning
  */
 class SimpleMarkdownParser {
     parseSimple(markdown) {
         if (!markdown) return '';
 
-        return markdown
+        // Store code blocks temporarily to preserve their formatting
+        const codeBlocks = [];
+        let codeBlockIndex = 0;
+
+        // Extract and store code blocks
+        let processedMarkdown = markdown.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+            const placeholder = `__CODE_BLOCK_${codeBlockIndex}__`;
+            codeBlocks[codeBlockIndex] = `<pre><code class="${lang || ''}">${code}</code></pre>`;
+            codeBlockIndex++;
+            return placeholder;
+        });
+
+        // Process the rest of the markdown
+        processedMarkdown = processedMarkdown
             // Headers
             .replace(/^### (.*$)/gm, '<h3>$1</h3>')
             .replace(/^## (.*$)/gm, '<h2>$1</h2>')
@@ -412,38 +725,77 @@ class SimpleMarkdownParser {
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>')
 
-            // Code blocks
-            .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code class="$1">$2</code></pre>')
+            // Inline code (after code blocks are extracted)
             .replace(/`([^`]+)`/g, '<code>$1</code>')
 
             // Links
             .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
 
-            // Lists
-            .replace(/^\* (.+)$/gm, '<li>$1</li>')
-            .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
-            .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+            // Numbered lists (handle multi-line items better)
+            .replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>')
+
+            // Bullet lists with better spacing
+            .replace(/^\s*[-*]\s+(.+)$/gm, '<li>$1</li>')
+
+            // Wrap consecutive list items in appropriate tags
+            .replace(/(<li>.*?<\/li>)(\s*<li>.*?<\/li>)*/gs, (match, firstItem) => {
+                // Check if this is a numbered list (starts with number)
+                if (firstItem.match(/<li>\d+\./)) {
+                    return `<ol>${match}</ol>`;
+                } else {
+                    return `<ul>${match}</ul>`;
+                }
+            })
 
             // Blockquotes
             .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
 
-            // Line breaks
-            .replace(/\n\n/g, '</p><p>')
-            .replace(/^(.+)$/gm, '<p>$1</p>')
+            // Handle line breaks and paragraphs more carefully
+            .split('\n\n')
+            .map(paragraph => {
+                paragraph = paragraph.trim();
+                if (!paragraph) return '';
 
-            // Clean up
+                // Skip if already has HTML tags or is a code block placeholder
+                if (paragraph.match(/^<[h1-6]|^<ul|^<ol|^<blockquote|^<pre|^<div/) || paragraph.includes('__CODE_BLOCK_')) {
+                    return paragraph;
+                }
+
+                // Wrap in paragraph tags
+                return `<p>${paragraph}</p>`;
+            })
+            .join('\n\n')
+
+            // Clean up empty paragraphs and fix nesting
             .replace(/<p><\/p>/g, '')
-            .replace(/<p>(<h[1-6]>)/g, '$1')
-            .replace(/(<\/h[1-6]>)<\/p>/g, '$1')
+            .replace(/<p>(<[h1-6])/g, '$1')
+            .replace(/(<\/[h1-6]>)<\/p>/g, '$1')
             .replace(/<p>(<ul>)/g, '$1')
             .replace(/(<\/ul>)<\/p>/g, '$1')
+            .replace(/<p>(<ol>)/g, '$1')
+            .replace(/(<\/ol>)<\/p>/g, '$1')
             .replace(/<p>(<blockquote>)/g, '$1')
-            .replace(/(<\/blockquote>)<\/p>/g, '$1');
+            .replace(/(<\/blockquote>)<\/p>/g, '$1')
+            .replace(/<p>(<pre>)/g, '$1')
+            .replace(/(<\/pre>)<\/p>/g, '$1')
+
+            // Fix multiple consecutive ul tags
+            .replace(/<\/ul>\s*<ul>/g, '')
+
+            // Better handling of line breaks within content (but not in code blocks)
+            .replace(/\n/g, '<br>');
+
+        // Restore code blocks with preserved formatting
+        for (let i = 0; i < codeBlocks.length; i++) {
+            processedMarkdown = processedMarkdown.replace(`__CODE_BLOCK_${i}__`, codeBlocks[i]);
+        }
+
+        return processedMarkdown;
     }
 
     parseAdvanced(markdown) {
         // For advanced parsing, you could integrate a library like marked.js
-        // For now, use the simple parser
+        // For now, use the enhanced simple parser
         return this.parseSimple(markdown);
     }
 }

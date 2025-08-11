@@ -243,6 +243,14 @@
     margin-bottom: var(--spacing-sm);
 }
 
+/* Dark mode error styling */
+@media (prefers-color-scheme: dark) {
+    .task-card__error {
+        background-color: rgba(220, 38, 38, 0.15);
+        border-color: #dc2626;
+    }
+}
+
 .error-message {
     display: flex;
     align-items: flex-start;

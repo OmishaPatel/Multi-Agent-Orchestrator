@@ -8,14 +8,12 @@
  * - Progress tracking and completion status
  */
 
-import { StatusPoller } from '../../utils/api.js';
 import { DOMUtils } from '../../utils/dom.js';
 
 export class ExecutionFlow {
-    constructor(state, apiClient) {
-        this.state = state;
-        this.api = apiClient;
-        this.poller = null;
+    constructor(stateManager, apiService) {
+        this.stateManager = stateManager;
+        this.apiService = apiService;
         this.element = null;
 
         // Component state
@@ -30,6 +28,10 @@ export class ExecutionFlow {
         this.handleStatusUpdate = this.handleStatusUpdate.bind(this);
         this.handleRetry = this.handleRetry.bind(this);
         this.handleCancel = this.handleCancel.bind(this);
+        this.handleStateChange = this.handleStateChange.bind(this);
+
+        // Subscribe to state changes
+        this.unsubscribe = this.stateManager.subscribe(this.handleStateChange);
     }
 
     /**
@@ -50,10 +52,15 @@ export class ExecutionFlow {
         // Setup event listeners
         this.setupEventListeners();
 
-        // Start polling if we have a thread ID
-        if (this.state.threadId) {
-            this.startPolling();
-        }
+        // Initialize with current state
+        console.log('[ExecutionFlow] Initializing with current state');
+        this.updateFromState();
+
+        // Force an immediate update to ensure visibility
+        setTimeout(() => {
+            console.log('[ExecutionFlow] Performing delayed state update');
+            this.updateFromState();
+        }, 100);
 
         return this.element;
     }
@@ -102,10 +109,6 @@ export class ExecutionFlow {
                 </div>
 
                 <div class="execution-flow-content">
-                    <div class="task-dependency-graph">
-                        <!-- Task visualization will be rendered here -->
-                    </div>
-                    
                     <div class="execution-flow-details">
                         <div class="current-task-info">
                             <h3>Current Task</h3>
@@ -146,7 +149,6 @@ export class ExecutionFlow {
             progressBar: this.element.querySelector('.progress-fill'),
             progressText: this.element.querySelector('.progress-percentage'),
             progressStatus: this.element.querySelector('.progress-status'),
-            taskGraph: this.element.querySelector('.task-dependency-graph'),
             currentTaskInfo: this.element.querySelector('.current-task-info'),
             currentTaskDescription: this.element.querySelector('.current-task-description'),
             agentList: this.element.querySelector('.agent-list'),
@@ -173,37 +175,74 @@ export class ExecutionFlow {
     }
 
     /**
-     * Start polling for status updates
+     * Handle state changes from state manager
      */
-    startPolling() {
-        if (this.poller) {
-            this.poller.stop();
+    handleStateChange(stateChangeData) {
+        const { newState, previousState } = stateChangeData;
+
+        console.log('[ExecutionFlow] State change received:', {
+            status: newState.status,
+            previousStatus: previousState?.status,
+            plan: newState.plan?.length,
+            progress: newState.progress,
+            taskResults: Object.keys(newState.taskResults || {}).length
+        });
+
+        // Update if we're in executing status OR if we just transitioned to executing
+        if (newState.status === 'executing' ||
+            (previousState?.status !== 'executing' && newState.status === 'executing')) {
+            console.log('[ExecutionFlow] Updating UI for executing status');
+            this.updateFromState();
         }
 
-        this.poller = new StatusPoller(
-            this.api,
-            this.state.threadId,
-            this.handleStatusUpdate,
-            {
-                interval: 2000,
-                maxAttempts: 300,
-                backoffMultiplier: 1.1,
-                maxInterval: 10000
-            }
-        );
-
-        this.poller.start();
-        this.showLoading();
+        // Also update if progress changed during execution
+        if (newState.status === 'executing' &&
+            previousState?.progress !== newState.progress) {
+            console.log('[ExecutionFlow] Progress updated during execution:', {
+                from: previousState?.progress,
+                to: newState.progress
+            });
+            this.updateFromState();
+        }
     }
 
     /**
-     * Stop polling
+     * Update component from current state
      */
-    stopPolling() {
-        if (this.poller) {
-            this.poller.stop();
-            this.poller = null;
+    updateFromState() {
+        const currentState = this.stateManager.getState();
+
+        if (currentState.status !== 'executing') {
+            console.log('[ExecutionFlow] Not updating - status is not executing:', currentState.status);
+            return;
         }
+
+        console.log('[ExecutionFlow] Updating from state:', {
+            tasks: currentState.plan?.length,
+            progress: currentState.progress,
+            taskResults: Object.keys(currentState.taskResults || {}).length,
+            currentTaskId: currentState.currentTaskId,
+            fullState: currentState
+        });
+
+        // Update component state from global state
+        this.tasks = currentState.plan || [];
+        this.progress = currentState.progress || 0;
+        this.currentStatus = {
+            status: currentState.status,
+            plan: currentState.plan,
+            progress: currentState.progress,
+            task_results: currentState.taskResults
+        };
+
+        // Update UI immediately
+        this.hideLoading();
+        this.hideError();
+        this.updateProgress();
+        this.updateCurrentTask();
+        this.updateAgentStatus();
+
+        console.log('[ExecutionFlow] UI updated with progress:', this.progress);
     }
 
     /**
@@ -223,7 +262,6 @@ export class ExecutionFlow {
         this.hideLoading();
         this.hideError();
         this.updateProgress();
-        this.updateTaskGraph();
         this.updateCurrentTask();
         this.updateAgentStatus();
 
@@ -243,230 +281,133 @@ export class ExecutionFlow {
         this.elements.progressBar.style.width = `${percentage}%`;
         this.elements.progressText.textContent = `${percentage}%`;
 
-        // Update status text based on current state
-        let statusText = 'In Progress...';
-        if (this.currentStatus) {
-            switch (this.currentStatus.status) {
-                case 'planning':
-                    statusText = 'Planning workflow...';
-                    break;
-                case 'awaiting_approval':
-                    statusText = 'Awaiting plan approval...';
-                    break;
-                case 'executing':
-                    statusText = 'Executing tasks...';
-                    break;
-                case 'completed':
-                    statusText = 'Completed successfully!';
-                    break;
-                case 'failed':
-                    statusText = 'Execution failed';
-                    break;
-                case 'cancelled':
-                    statusText = 'Cancelled by user';
-                    break;
-                default:
-                    statusText = 'Processing...';
-            }
-        }
+        // Update status text with more engaging messages
+        let statusText = this.getProgressStatusText(percentage);
 
         this.elements.progressStatus.textContent = statusText;
     }
 
     /**
-     * Update task dependency graph visualization
+     * Get engaging progress status text based on percentage
      */
-    updateTaskGraph() {
-        if (!this.tasks || this.tasks.length === 0) {
-            this.elements.taskGraph.innerHTML = `
-                <div class="task-graph-empty">
-                    <p>No tasks available yet...</p>
-                </div>
-            `;
-            return;
+    getProgressStatusText(percentage) {
+        if (percentage === 0) {
+            return 'Initializing task execution...';
+        } else if (percentage < 20) {
+            return 'Setting up execution environment...';
+        } else if (percentage < 40) {
+            return 'Processing first set of tasks...';
+        } else if (percentage < 60) {
+            return 'Making good progress on tasks...';
+        } else if (percentage < 80) {
+            return 'Completing remaining tasks...';
+        } else if (percentage < 95) {
+            return 'Finalizing results...';
+        } else if (percentage < 100) {
+            return 'Almost done, preparing final report...';
+        } else {
+            return 'Completed successfully!';
         }
-
-        // Create task dependency visualization
-        const graphHTML = this.renderTaskDependencyGraph();
-        this.elements.taskGraph.innerHTML = graphHTML;
     }
 
-    /**
-     * Render task dependency graph using CSS Grid
-     */
-    renderTaskDependencyGraph() {
-        // Sort tasks by dependencies to create proper layout
-        const sortedTasks = this.topologicalSort(this.tasks);
-        const taskLevels = this.calculateTaskLevels(sortedTasks);
 
-        let html = '<div class="task-graph">';
 
-        // Render tasks by levels
-        taskLevels.forEach((level, levelIndex) => {
-            html += `<div class="task-level" data-level="${levelIndex}">`;
 
-            level.forEach(task => {
-                const statusClass = this.getTaskStatusClass(task.status);
-                const isActive = task.status === 'in_progress';
 
-                html += `
-                    <div class="task-node ${statusClass} ${isActive ? 'active' : ''}" 
-                         data-task-id="${task.id}"
-                         title="${task.description}">
-                        <div class="task-node-header">
-                            <span class="task-id">#${task.id}</span>
-                            <span class="task-type">${task.type}</span>
-                        </div>
-                        <div class="task-node-content">
-                            <h4 class="task-title">${this.truncateText(task.description, 50)}</h4>
-                            <div class="task-status">
-                                ${this.getStatusIcon(task.status)}
-                                <span>${this.formatStatus(task.status)}</span>
-                            </div>
-                        </div>
-                        ${task.result ? `<div class="task-result-preview">${this.truncateText(task.result, 100)}</div>` : ''}
-                    </div>
-                `;
-            });
 
-            html += '</div>';
-        });
 
-        html += '</div>';
 
-        // Add dependency lines if needed
-        html += this.renderDependencyLines(sortedTasks);
-
-        return html;
-    }
-
-    /**
-     * Topological sort for task dependencies
-     */
-    topologicalSort(tasks) {
-        const visited = new Set();
-        const result = [];
-        const taskMap = new Map(tasks.map(task => [task.id, task]));
-
-        function visit(taskId) {
-            if (visited.has(taskId)) return;
-            visited.add(taskId);
-
-            const task = taskMap.get(taskId);
-            if (task && task.dependencies) {
-                task.dependencies.forEach(depId => visit(depId));
-            }
-
-            if (task) result.push(task);
-        }
-
-        tasks.forEach(task => visit(task.id));
-        return result;
-    }
-
-    /**
-     * Calculate task levels for visualization
-     */
-    calculateTaskLevels(tasks) {
-        const levels = [];
-        const taskLevelMap = new Map();
-
-        tasks.forEach(task => {
-            let level = 0;
-            if (task.dependencies && task.dependencies.length > 0) {
-                level = Math.max(...task.dependencies.map(depId =>
-                    (taskLevelMap.get(depId) || 0) + 1
-                ));
-            }
-
-            taskLevelMap.set(task.id, level);
-
-            if (!levels[level]) levels[level] = [];
-            levels[level].push(task);
-        });
-
-        return levels;
-    }
-
-    /**
-     * Get CSS class for task status
-     */
-    getTaskStatusClass(status) {
-        const statusMap = {
-            'pending': 'task-pending',
-            'in_progress': 'task-in-progress',
-            'completed': 'task-completed',
-            'failed': 'task-failed',
-            'cancelled': 'task-cancelled'
-        };
-        return statusMap[status] || 'task-unknown';
-    }
-
-    /**
-     * Get status icon
-     */
-    getStatusIcon(status) {
-        const icons = {
-            'pending': '⏳',
-            'in_progress': '🔄',
-            'completed': '✅',
-            'failed': '❌',
-            'cancelled': '⏹️'
-        };
-        return icons[status] || '❓';
-    }
-
-    /**
-     * Format status text
-     */
-    formatStatus(status) {
-        return status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
-    }
-
-    /**
-     * Render dependency lines (simplified version)
-     */
-    renderDependencyLines(tasks) {
-        // For now, return empty - complex SVG lines would require more sophisticated positioning
-        return '<div class="dependency-lines"></div>';
-    }
 
     /**
      * Update current task information
      */
     updateCurrentTask() {
-        if (!this.currentStatus || !this.tasks) return;
+        const currentState = this.stateManager.getState();
+        const progress = currentState.simulatedProgress || 0;
 
-        const currentTask = this.tasks.find(task => task.status === 'in_progress');
-
-        if (currentTask) {
-            this.elements.currentTaskDescription.innerHTML = `
-                <strong>Task #${currentTask.id}:</strong> ${currentTask.description}
-                <br><small>Type: ${currentTask.type}</small>
-            `;
-        } else {
-            this.elements.currentTaskDescription.textContent = 'No active task';
+        // If we have real task data, use it
+        if (this.currentStatus && this.tasks) {
+            const currentTask = this.tasks.find(task => task.status === 'in_progress');
+            if (currentTask) {
+                this.elements.currentTaskDescription.innerHTML = `
+                    <strong>Task #${currentTask.id}:</strong> ${currentTask.description}
+                    <br><small>Type: ${currentTask.type}</small>
+                `;
+                return;
+            }
         }
+
+        // Otherwise, show simulated current task based on progress
+        let currentTaskText = 'Preparing to start execution...';
+
+        if (progress > 0.80) {
+            currentTaskText = '<strong>Finalizing:</strong> Compiling final report and recommendations<br><small>Agent: Execution</small>';
+        } else if (progress > 0.60) {
+            currentTaskText = '<strong>Processing:</strong> Analyzing data and creating insights<br><small>Agent: Execution</small>';
+        } else if (progress > 0.40) {
+            currentTaskText = '<strong>Synthesizing:</strong> Organizing and structuring information<br><small>Agent: Execution</small>';
+        } else if (progress > 0.20) {
+            currentTaskText = '<strong>Researching:</strong> Gathering comprehensive information<br><small>Agent: Research</small>';
+        } else if (progress > 0.05) {
+            currentTaskText = '<strong>Initializing:</strong> Setting up research parameters<br><small>Agent: Research</small>';
+        } else if (progress > 0) {
+            currentTaskText = '<strong>Starting:</strong> Preparing execution environment<br><small>System</small>';
+        }
+
+        this.elements.currentTaskDescription.innerHTML = currentTaskText;
     }
 
     /**
      * Update agent status display
      */
     updateAgentStatus() {
-        if (!this.currentStatus) return;
+        const currentState = this.stateManager.getState();
+        const progress = currentState.simulatedProgress || 0;
 
+        // Simplified 2-agent system for clarity
         const agents = [
-            { name: 'Planning Agent', status: 'idle', type: 'planning' },
             { name: 'Research Agent', status: 'idle', type: 'research' },
-            { name: 'Code Agent', status: 'idle', type: 'code' }
+            { name: 'Execution Agent', status: 'idle', type: 'execution' }
         ];
 
-        // Determine active agent based on current task
-        const currentTask = this.tasks.find(task => task.status === 'in_progress');
-        if (currentTask) {
-            const activeAgent = agents.find(agent => agent.type === currentTask.type);
-            if (activeAgent) {
-                activeAgent.status = 'active';
+        // Determine active agent based on progress
+        if (progress > 0.95) {
+            // All tasks completed
+            agents[0].status = 'completed'; // Research Agent
+            agents[1].status = 'completed'; // Execution Agent
+        } else if (progress > 0.50) {
+            // Execution phase (analysis, summary, recommendations)
+            agents[0].status = 'completed'; // Research Agent (research tasks done)
+            agents[1].status = 'active'; // Execution Agent (processing and creating outputs)
+        } else if (progress > 0.05) {
+            // Research phase (gathering information)
+            agents[0].status = 'active'; // Research Agent
+            agents[1].status = 'idle'; // Execution Agent
+        }
+
+        // If we have real task data, use it to override simulation
+        if (this.currentStatus && this.tasks) {
+            const currentTask = this.tasks.find(task => task.status === 'in_progress');
+            if (currentTask) {
+                // Reset all to idle first
+                agents.forEach(agent => agent.status = 'idle');
+
+                // Set active agent based on task type
+                const activeAgent = agents.find(agent => agent.type === currentTask.type);
+                if (activeAgent) {
+                    activeAgent.status = 'active';
+                }
+
+                // Mark completed agents based on completed tasks
+                const completedTaskTypes = this.tasks
+                    .filter(task => task.status === 'completed')
+                    .map(task => task.type);
+
+                agents.forEach(agent => {
+                    if (completedTaskTypes.includes(agent.type) && agent.status !== 'active') {
+                        agent.status = 'completed';
+                    }
+                });
             }
         }
 
@@ -531,8 +472,14 @@ export class ExecutionFlow {
      * Handle retry action
      */
     handleRetry() {
-        if (this.state.threadId) {
-            this.startPolling();
+        const currentState = this.stateManager.getState();
+        if (currentState.threadId) {
+            // Reset to planning state to restart workflow
+            this.stateManager.setState({
+                status: 'planning',
+                error: null,
+                lastError: null
+            }, 'executionFlow.retry');
         }
     }
 
@@ -540,16 +487,19 @@ export class ExecutionFlow {
      * Handle cancel action
      */
     async handleCancel() {
-        if (!this.state.threadId) return;
+        const currentState = this.stateManager.getState();
+        if (!currentState.threadId) return;
 
         try {
-            const result = await this.api.cancelWorkflow(this.state.threadId);
-            if (result.success) {
-                this.stopPolling();
-                this.elements.progressStatus.textContent = 'Cancelled by user';
-            }
+            // Emit cancel event for API service to handle
+            this.apiService.eventBus.emit('cancelWorkflow', {
+                threadId: currentState.threadId
+            });
+
+            this.elements.progressStatus.textContent = 'Cancelling workflow...';
         } catch (error) {
             console.error('Failed to cancel workflow:', error);
+            this.showError('Failed to cancel workflow');
         }
     }
 
@@ -582,16 +532,17 @@ export class ExecutionFlow {
      * Update component with new state
      */
     update() {
-        if (this.state.threadId && !this.poller) {
-            this.startPolling();
-        }
+        this.updateFromState();
     }
 
     /**
      * Cleanup component
      */
     destroy() {
-        this.stopPolling();
+        // Unsubscribe from state changes
+        if (this.unsubscribe) {
+            this.unsubscribe();
+        }
 
         // Remove event listeners
         window.removeEventListener('resize', this.handleResize);
