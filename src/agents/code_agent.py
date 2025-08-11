@@ -427,12 +427,7 @@ class CodeAgent:
             f"```python\n{code}\n```\n"
         ]
         
-        # Add code analysis
-        complexity = self.analyze_code_complexity(code)
-        result_sections.append(f"### Code Analysis:\n")
-        result_sections.append(f"- **Complexity Level:** {complexity['complexity_level']}\n")
-        result_sections.append(f"- **Lines of Code:** {complexity['metrics']['code_lines']}\n")
-        result_sections.append(f"- **Functions:** {complexity['metrics']['function_count']}\n")
+        # Code analysis section removed for cleaner output
         
         # Add execution results
         result_sections.append("### Execution Result:\n")
@@ -455,12 +450,7 @@ class CodeAgent:
             result_sections.append(f"**Status:** ❌ Failed\n")
             result_sections.append(f"**Error:**\n```\n{error}\n```\n")
         
-        # Add security summary
-        result_sections.append("### Security Summary:\n")
-        result_sections.append("- ✅ Code executed in isolated Docker container\n")
-        result_sections.append("- ✅ Network access disabled\n")
-        result_sections.append("- ✅ File system access restricted\n")
-        result_sections.append(f"- ✅ Execution time limited to {self.security_config['max_execution_time']}s\n")
+        # Security summary section removed for cleaner output
         
         return "".join(result_sections)
     
