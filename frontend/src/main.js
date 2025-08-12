@@ -151,6 +151,12 @@ class ClarityApp {
   renderPlanning() {
     const currentState = this.stateManager.getState();
 
+    // Cleanup other components first
+    this.cleanupComponents(['inputForm', 'executionFlow', 'planVerification']);
+
+    // Clear existing content
+    DOMUtils.clearElement(this.elements.content);
+
     this.elements.content.innerHTML = `
       <div class="card">
         <div class="card-header">
@@ -497,6 +503,7 @@ In conclusion, the impact of AI on job markets is multifaceted, with both opport
   cleanupComponents(componentNames) {
     componentNames.forEach(componentName => {
       if (this[componentName]) {
+        console.log(`[ClarityApp] Cleaning up component: ${componentName}`);
         if (typeof this[componentName].destroy === 'function') {
           this[componentName].destroy();
         } else if (typeof this[componentName].reset === 'function') {
@@ -554,38 +561,56 @@ In conclusion, the impact of AI on job markets is multifaceted, with both opport
     // Clear existing content
     DOMUtils.clearElement(this.elements.content);
 
-    // Cleanup other components
-    if (this.inputForm) {
-      this.inputForm.destroy();
-      this.inputForm = null;
-    }
-    if (this.executionFlow) {
-      this.executionFlow.destroy();
-      this.executionFlow = null;
+    // Cleanup other components except planVerification if it exists and is working
+    this.cleanupComponents(['inputForm', 'executionFlow']);
+
+    // Create container for PlanVerification component if it doesn't exist
+    let planVerificationContainer = this.elements.content.querySelector('.plan-verification-container');
+    if (!planVerificationContainer) {
+      planVerificationContainer = document.createElement('div');
+      planVerificationContainer.className = 'plan-verification-container';
+      this.elements.content.appendChild(planVerificationContainer);
     }
 
-    // Create container for PlanVerification component
-    const planVerificationContainer = document.createElement('div');
-    this.elements.content.appendChild(planVerificationContainer);
-
-    // Create and initialize PlanVerification component
+    // Create and initialize PlanVerification component if needed
     if (!this.planVerification) {
+      console.log('[ClarityApp] Creating new PlanVerification component');
       this.planVerification = new PlanVerification(planVerificationContainer, this.eventBus, this.apiService);
+    } else {
+      console.log('[ClarityApp] Reusing existing PlanVerification component');
+      // Reset the component for new plan
+      this.planVerification.reset();
     }
 
     // Display the current plan
     if (currentState.plan && currentState.threadId) {
       console.log('[ClarityApp] Emitting planReceived event with', currentState.plan.length, 'tasks');
-      // Trigger plan display through event bus
-      this.eventBus.emit('planReceived', {
-        plan: currentState.plan,
-        threadId: currentState.threadId
-      });
+      // Small delay to ensure component is ready
+      setTimeout(() => {
+        this.eventBus.emit('planReceived', {
+          plan: currentState.plan,
+          threadId: currentState.threadId
+        });
+      }, 100);
     } else {
       console.warn('[ClarityApp] Missing plan or threadId for approval rendering:', {
         hasPlan: !!currentState.plan,
         hasThreadId: !!currentState.threadId
       });
+
+      // Show loading state if we're missing plan data
+      planVerificationContainer.innerHTML = `
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Loading Plan...</h2>
+            <p class="card-description">Waiting for plan data to be received</p>
+          </div>
+          <div class="text-center py-8">
+            <div class="loading mx-auto mb-4" style="width: 40px; height: 40px; position: relative;"></div>
+            <p class="text-secondary">Receiving plan data...</p>
+          </div>
+        </div>
+      `;
     }
   }
 

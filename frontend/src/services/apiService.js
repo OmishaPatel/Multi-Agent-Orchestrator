@@ -187,7 +187,7 @@ export class ApiService {
                     this.stateManager.setState({
                         status: 'planning',
                         plan: null, // Clear rejected plan
-                        isLoading: false
+                        isLoading: true // Show loading during regeneration
                     }, 'apiService.handlePlanApproval.rejected');
 
                     // Restart polling immediately for plan regeneration
@@ -446,10 +446,11 @@ export class ApiService {
 
         // CRITICAL: Don't override approval state if user is currently reviewing
         // Only transition FROM approval state when user explicitly approves/rejects
-        if (this.approvalStateLocked ||
-            (currentState.status === 'awaiting_approval' &&
-                (statusData.status === 'pending_approval' || statusData.status === 'awaiting_approval'))) {
-            console.log('[ApiService] Approval state locked - user is reviewing plan, not updating state from polling');
+        // BUT allow transitions TO approval state (new plan received after rejection)
+        if (this.approvalStateLocked &&
+            currentState.status === 'awaiting_approval' &&
+            (statusData.status === 'pending_approval' || statusData.status === 'awaiting_approval')) {
+            console.log('[ApiService] Approval state locked - user is reviewing same plan, not updating state from polling');
 
             // Still update API connection status
             this.stateManager.setState({
@@ -462,6 +463,13 @@ export class ApiService {
                 timestamp: new Date().toISOString()
             });
             return;
+        }
+
+        // If we're transitioning FROM planning TO approval, unlock the approval state
+        if (currentState.status === 'planning' &&
+            (statusData.status === 'pending_approval' || statusData.status === 'awaiting_approval')) {
+            console.log('[ApiService] Unlocking approval state - new plan received after regeneration');
+            this.approvalStateLocked = false;
         }
 
         // Special handling for execution state - always update progress even if status hasn't changed

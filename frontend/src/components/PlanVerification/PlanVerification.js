@@ -110,18 +110,34 @@ export class PlanVerification {
 
         // Listen for plan received events through event bus
         this.eventBus.on('planReceived', (data) => {
+            console.log('[PlanVerification] Received planReceived event:', {
+                planLength: data.plan?.length,
+                threadId: data.threadId
+            });
             this.displayPlan(data.plan, data.threadId);
         });
     }
 
     displayPlan(plan, threadId) {
+        console.log('[PlanVerification] Displaying plan:', {
+            planLength: plan?.length,
+            threadId: threadId,
+            planData: plan
+        });
+
         this.currentPlan = plan;
         this.threadId = threadId;
 
         const planDisplay = this.container.querySelector('#planDisplay');
+        if (!planDisplay) {
+            console.error('[PlanVerification] planDisplay element not found in container');
+            return;
+        }
+
         DOMUtils.clearElement(planDisplay);
 
         if (!plan || !Array.isArray(plan) || plan.length === 0) {
+            console.warn('[PlanVerification] No valid plan data to display');
             planDisplay.innerHTML = `
                 <div class="plan-verification__empty">
                     <p>No plan available to review.</p>
