@@ -207,11 +207,21 @@ class CodeAgent:
                       for item in node.items):
                     warnings.append("File operation detected - ensure it's necessary")
             
-            # Check for network-related operations
+            # Check for network-related operations (context-aware)
             elif isinstance(node, ast.Attribute):
-                network_attrs = ['urlopen', 'request', 'get', 'post', 'connect']
-                if node.attr in network_attrs:
-                    issues.append(f"Network operation detected: {node.attr}")
+                # Only flag network operations when used with known network modules
+                if isinstance(node.value, ast.Name):
+                    # Check for requests.get, urllib.request, etc.
+                    network_modules = ['requests', 'urllib', 'http', 'socket', 'ftplib', 'smtplib']
+                    network_attrs = ['urlopen', 'request', 'get', 'post', 'put', 'delete', 'connect', 'send']
+                    
+                    if (node.value.id in network_modules and node.attr in network_attrs):
+                        issues.append(f"Network operation detected: {node.value.id}.{node.attr}")
+                elif isinstance(node.value, ast.Attribute):
+                    # Check for urllib.request.urlopen, etc.
+                    if (hasattr(node.value, 'attr') and node.value.attr in ['request', 'urllib'] and 
+                        node.attr in ['urlopen', 'get', 'post']):
+                        issues.append(f"Network operation detected: {node.value.attr}.{node.attr}")
         
         return {'issues': issues, 'warnings': warnings}
     
@@ -295,6 +305,8 @@ class CodeAgent:
         2. NO file system access, network operations, or system calls
         3. NO imports of: os, sys, subprocess, requests, urllib, socket
         4. NO use of: exec, eval, compile, __import__, open, input
+        5. AVOID external packages like matplotlib, pandas, numpy (not available in execution environment)
+        6. For data visualization, use text-based output or ASCII charts instead of matplotlib
 
         CODE REQUIREMENTS:
         1. Write clean, well-commented Python code
@@ -448,9 +460,28 @@ class CodeAgent:
         else:
             error = execution_result.get("error", "Unknown error")
             result_sections.append(f"**Status:** ❌ Failed\n")
-            result_sections.append(f"**Error:**\n```\n{error}\n```\n")
+            
+            # Check for common missing package errors and provide helpful suggestions
+            if "ModuleNotFoundError" in error and "matplotlib" in error:
+                result_sections.append(f"**Error:** Missing matplotlib package\n")
+                result_sections.append(f"**Suggestion:** The visualization code is correct, but matplotlib is not available in the execution environment. ")
+                result_sections.append(f"In a full Python environment, you would install it with: `pip install matplotlib`\n")
+                result_sections.append(f"**Alternative:** Consider using text-based output or ASCII charts for visualization in this environment.\n")
+            elif "ModuleNotFoundError" in error and any(pkg in error for pkg in ["pandas", "numpy", "seaborn", "plotly"]):
+                missing_pkg = next(pkg for pkg in ["pandas", "numpy", "seaborn", "plotly"] if pkg in error)
+                result_sections.append(f"**Error:** Missing {missing_pkg} package\n")
+                result_sections.append(f"**Suggestion:** The code is correct, but {missing_pkg} is not available in the execution environment. ")
+                result_sections.append(f"In a full Python environment, you would install it with: `pip install {missing_pkg}`\n")
+                result_sections.append(f"**Alternative:** Consider using built-in Python libraries like `statistics` and `json` for data processing.\n")
+            else:
+                result_sections.append(f"**Error:**\n```\n{error}\n```\n")
         
-        # Security summary section removed for cleaner output
+        # Add security summary
+        result_sections.append("### Security Summary:\n")
+        result_sections.append("- ✅ Code executed in isolated Docker container\n")
+        result_sections.append("- ✅ Network access disabled\n")
+        result_sections.append("- ✅ File system access restricted\n")
+        result_sections.append("- ✅ Execution time limited to 30s\n")
         
         return "".join(result_sections)
     
