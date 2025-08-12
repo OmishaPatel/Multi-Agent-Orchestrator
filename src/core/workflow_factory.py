@@ -149,7 +149,7 @@ class WorkflowFactory:
             
             # We already have the planning_result from the direct planning execution
             logger.info(f"Initial workflow setup completed with direct planning execution")
-            logger.info(f"✅ Workflow manually set up to be ready for approval/rejection")
+            logger.info("Workflow manually set up to be ready for approval/rejection")
             
             # Save state to Redis if using hybrid checkpointing
             if self.checkpointing_type == "hybrid" and self.redis_state_manager:

@@ -201,9 +201,16 @@ class StateRecoveryManager:
                         continue
                     
                     # Check if state has updated_at timestamp
-                    updated_at_str = state_data.get('updated_at')
-                    if updated_at_str:
+                    # Redis returns bytes, so we need to decode them
+                    updated_at_bytes = state_data.get(b'updated_at') or state_data.get('updated_at')
+                    if updated_at_bytes:
                         try:
+                            # Decode bytes to string if necessary
+                            if isinstance(updated_at_bytes, bytes):
+                                updated_at_str = updated_at_bytes.decode('utf-8')
+                            else:
+                                updated_at_str = updated_at_bytes
+                            
                             updated_at = datetime.fromisoformat(updated_at_str.replace('Z', '+00:00'))
                             state_timestamp = updated_at.timestamp()
                             
@@ -212,7 +219,7 @@ class StateRecoveryManager:
                                 redis_client.delete(state_key)
                                 cleanup_stats["threads_deleted"] += 1
                                 cleanup_stats["checkpoints_deleted"] += 1  # Count as checkpoint for compatibility
-                                logger.debug(f"Deleted expired state for thread {thread_id}")
+                                logger.debug(f"Deleted expired state for thread {thread_id} (age: {(time.time() - state_timestamp) / 3600:.1f} hours)")
                         except (ValueError, AttributeError) as e:
                             logger.warning(f"Could not parse timestamp for thread {thread_id}: {e}")
                     else:
@@ -258,9 +265,16 @@ class StateRecoveryManager:
                 try:
                     # Get state data to check timestamp
                     state_data = redis_client.hgetall(state_key)
-                    updated_at_str = state_data.get('updated_at')
+                    # Redis returns bytes, so we need to decode them
+                    updated_at_bytes = state_data.get(b'updated_at') or state_data.get('updated_at')
                     
-                    if updated_at_str:
+                    if updated_at_bytes:
+                        # Decode bytes to string if necessary
+                        if isinstance(updated_at_bytes, bytes):
+                            updated_at_str = updated_at_bytes.decode('utf-8')
+                        else:
+                            updated_at_str = updated_at_bytes
+                        
                         updated_at = datetime.fromisoformat(updated_at_str.replace('Z', '+00:00'))
                         if updated_at.timestamp() < cutoff_timestamp:
                             redis_client.delete(state_key)
@@ -293,10 +307,17 @@ class StateRecoveryManager:
                     
                     # Get state data to check timestamp
                     state_data = redis_client.hgetall(state_key)
-                    updated_at_str = state_data.get('updated_at')
+                    # Redis returns bytes, so we need to decode them
+                    updated_at_bytes = state_data.get(b'updated_at') or state_data.get('updated_at')
                     
-                    if updated_at_str:
+                    if updated_at_bytes:
                         try:
+                            # Decode bytes to string if necessary
+                            if isinstance(updated_at_bytes, bytes):
+                                updated_at_str = updated_at_bytes.decode('utf-8')
+                            else:
+                                updated_at_str = updated_at_bytes
+                            
                             updated_at = datetime.fromisoformat(updated_at_str.replace('Z', '+00:00'))
                             state_timestamp = updated_at.timestamp()
                             
@@ -349,10 +370,17 @@ class StateRecoveryManager:
                 try:
                     # Check if state is old enough to be cleaned up
                     state_data = redis_client.hgetall(state_key)
-                    updated_at_str = state_data.get('updated_at')
+                    # Redis returns bytes, so we need to decode them
+                    updated_at_bytes = state_data.get(b'updated_at') or state_data.get('updated_at')
                     
-                    if updated_at_str:
+                    if updated_at_bytes:
                         try:
+                            # Decode bytes to string if necessary
+                            if isinstance(updated_at_bytes, bytes):
+                                updated_at_str = updated_at_bytes.decode('utf-8')
+                            else:
+                                updated_at_str = updated_at_bytes
+                            
                             updated_at = datetime.fromisoformat(updated_at_str.replace('Z', '+00:00'))
                             if updated_at.timestamp() < cutoff_timestamp:
                                 cleanup_candidates += 1
