@@ -177,7 +177,7 @@ class StateRecoveryManager:
             redis_client = self.redis_state_manager.redis
             state_keys = list(redis_client.scan_iter(match=state_pattern))
 
-            logger.info(f"Starting cleanup of {len(state_keys)} states older than {max_age_hours} hours")
+            logger.info(f"Starting cleanup process - found {len(state_keys)} states to check (will delete those older than {max_age_hours} hours)")
 
             for state_key in state_keys:
                 try:
