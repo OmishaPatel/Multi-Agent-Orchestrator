@@ -3,6 +3,7 @@ import os
 from src.core.model_service import ModelService
 from src.tools.browser_tools import BrowserTools
 from src.utils.logging_config import get_logger, get_agent_logger, log_agent_execution
+from src.services.langfuse_service import langfuse_service
 import asyncio
 
 # Try to import Tavily
@@ -275,7 +276,8 @@ class ResearchAgent:
         COMPREHENSIVE ANALYSIS:"""
 
         try:
-            analysis = model.invoke(prompt)
+            config = langfuse_service.get_langchain_config()
+            analysis = model.invoke(prompt, config=config)
             
             # Add source credibility summary
             credibility_summary = self._generate_credibility_summary(search_results)
@@ -321,7 +323,8 @@ class ResearchAgent:
         Return only the search queries, one per line:"""
 
         try:
-            response = model.invoke(prompt)
+            config = langfuse_service.get_langchain_config()
+            response = model.invoke(prompt, config=config)
             queries = [q.strip() for q in response.split('\n') if q.strip()]
             
             # Fallback if parsing fails
@@ -370,7 +373,8 @@ class ResearchAgent:
         ANALYSIS:"""
 
         try:
-            analysis = model.invoke(prompt)
+            config = langfuse_service.get_langchain_config()
+            analysis = model.invoke(prompt, config=config)
             return analysis
             
         except Exception as e:
@@ -393,7 +397,8 @@ class ResearchAgent:
         RESPONSE:"""
 
         try:
-            response = model.invoke(prompt)
+            config = langfuse_service.get_langchain_config()
+            response = model.invoke(prompt, config=config)
             return f"[Knowledge-based response - no web search available]\n\n{response}"
             
         except Exception as e:
@@ -424,7 +429,8 @@ class ResearchAgent:
         RESPONSE:"""
 
         try:
-            response = model.invoke(prompt)
+            config = langfuse_service.get_langchain_config()
+            response = model.invoke(prompt, config=config)
             return response
             
         except Exception as e:
@@ -452,7 +458,8 @@ class ResearchAgent:
 
             ANALYSIS:"""
 
-            analysis = model.invoke(prompt)
+            config = langfuse_service.get_langchain_config()
+            analysis = model.invoke(prompt, config=config)
             return analysis
             
         except Exception as e:
@@ -478,7 +485,8 @@ class ResearchAgent:
 
             SUMMARY:"""
 
-            summary = model.invoke(prompt)
+            config = langfuse_service.get_langchain_config()
+            summary = model.invoke(prompt, config=config)
             return summary
             
         except Exception as e:

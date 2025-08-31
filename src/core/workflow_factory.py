@@ -113,7 +113,10 @@ class WorkflowFactory:
 
         # Use singleton pattern to get/create workflow instance
         workflow = self.get_or_create_workflow(thread_id)
-        config = {"configurable": {"thread_id": thread_id}}
+        
+        # Get Langfuse-integrated config for agent graph visualization
+        from src.core.langfuse_langgraph_integration import langfuse_langgraph
+        config = langfuse_langgraph.get_execution_config(thread_id)
         try:
             # Create properly initialized initial state
             initial_state = {
@@ -169,7 +172,10 @@ class WorkflowFactory:
         
         # CRITICAL: Use the SAME workflow instance that was created for this thread
         workflow = self.get_or_create_workflow(thread_id)
-        config = {"configurable": {"thread_id": thread_id}}
+        
+        # Get Langfuse-integrated config for agent graph visualization
+        from src.core.langfuse_langgraph_integration import langfuse_langgraph
+        config = langfuse_langgraph.get_execution_config(thread_id)
         
         # CRITICAL: For hybrid checkpointing, we need to ensure the LangGraph state
         # is synchronized with our Redis state since we're creating a new workflow instance

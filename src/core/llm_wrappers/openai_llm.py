@@ -5,6 +5,7 @@ import time
 from typing import Optional, List, Any, Dict
 from .base_llm import BaseLLMWrapper
 import logging
+from src.services.langfuse_service import langfuse_service
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,8 @@ class OpenAILLM(BaseLLMWrapper):
                     result = await response.json()
                     response_text = result["choices"][0]["message"]["content"].strip()
 
+                    # Model usage tracking is now handled by the base class
+
                     logger.info(f"Successfully received response from {self.model_name}")
                     return response_text
 
@@ -115,6 +118,28 @@ class OpenAILLM(BaseLLMWrapper):
                 raise Exception(f"OpenAI API call failed: {str(e)}")
             raise
     
+    def _calculate_input_cost(self, input_tokens: int) -> float:
+        """Calculate input cost based on model and token count"""
+        # OpenAI pricing (as of 2024) - update these as needed
+        pricing = {
+            "gpt-3.5-turbo": 0.0015 / 1000,  # $0.0015 per 1K tokens
+            "gpt-4": 0.03 / 1000,            # $0.03 per 1K tokens
+            "gpt-4-turbo": 0.01 / 1000,      # $0.01 per 1K tokens
+        }
+        rate = pricing.get(self.model_name, 0.0015 / 1000)  # Default to GPT-3.5 rate
+        return input_tokens * rate
+
+    def _calculate_output_cost(self, output_tokens: int) -> float:
+        """Calculate output cost based on model and token count"""
+        # OpenAI pricing (as of 2024) - update these as needed
+        pricing = {
+            "gpt-3.5-turbo": 0.002 / 1000,   # $0.002 per 1K tokens
+            "gpt-4": 0.06 / 1000,            # $0.06 per 1K tokens
+            "gpt-4-turbo": 0.03 / 1000,      # $0.03 per 1K tokens
+        }
+        rate = pricing.get(self.model_name, 0.002 / 1000)  # Default to GPT-3.5 rate
+        return output_tokens * rate
+
     async def _acall(
         self,
         prompt: str,
@@ -123,6 +148,8 @@ class OpenAILLM(BaseLLMWrapper):
         **kwargs: Any,
     ) -> str:
         """
-        Async call implementation - uses the base class implementation for retry logic and caching.
+        Async call implementation with enhanced Langfuse integration
         """
+        # The Langfuse callback handler will automatically capture this call
+        # when used within a LangGraph workflow
         return await super()._acall(prompt, stop, run_manager, **kwargs)

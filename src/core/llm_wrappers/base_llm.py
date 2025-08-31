@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Any
 from langchain.llms.base import LLM
 from langchain.callbacks.manager import CallbackManagerForLLMRun, AsyncCallbackManagerForLLMRun
+from src.services.langfuse_service import langfuse_service
 from src.config.settings import get_settings
 import asyncio
 import time
@@ -132,7 +133,13 @@ class BaseLLMWrapper(LLM, ABC):
         if self.response_cache is not None and cache_key in self.response_cache:
             self.metrics.cache_hits +=1
             logger.debug(f"Cache hit for model {self.model_name}")
+            langfuse_service.log_custom_event("cache_hit", {
+            "model_name": self.model_name,
+            "cache_key": cache_key[:10],
+            "prompt_length": len(prompt)
+        })
             return self.response_cache[cache_key]
+
 
         if self.response_cache is not None:
             self.metrics.cache_misses += 1
@@ -150,6 +157,17 @@ class BaseLLMWrapper(LLM, ABC):
 
                 self._update_metrics(response, latency, success=True)
 
+                # Calculate token estimates and costs
+                input_tokens = len(prompt.split())  # Rough estimate
+                output_tokens = len(response.split())  # Rough estimate
+                total_tokens = input_tokens + output_tokens
+                
+                # Estimate costs (you can adjust these rates based on your models)
+                input_cost = input_tokens * 0.0001  # $0.0001 per input token (example rate)
+                output_cost = output_tokens * 0.0002  # $0.0002 per output token (example rate)
+                
+                # LLM call logging is now handled by Langfuse callback handler
+
                 # store in bounded cache
                 self._cache_response(cache_key, response)
 
@@ -161,7 +179,13 @@ class BaseLLMWrapper(LLM, ABC):
                 last_exception = e
                 self.metrics.error_count += 1
                 self._update_metrics("", 0, success=False)
-
+                # Log error to LangFuse
+                langfuse_service.log_custom_event("llm_error", {
+                "model_name": self.model_name,
+                "attempt": attempt + 1,
+                "error": str(e),
+                "prompt_length": len(prompt)
+            })
                 logger.warning(f"Attempt {attempt + 1} failed for {self.model_name}: {str(e)}")
 
                 # no retry on last attempt

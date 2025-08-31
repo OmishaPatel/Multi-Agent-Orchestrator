@@ -5,6 +5,7 @@ import subprocess
 from src.core.model_service import ModelService
 from src.tools.code_interpreter import CodeInterpreter
 from src.utils.logging_config import get_logger, get_agent_logger, log_agent_execution
+from src.services.langfuse_service import langfuse_service
 import re
 
 logger = get_agent_logger("code")
@@ -112,7 +113,8 @@ class CodeAgent:
 
             EXPLANATION:"""
 
-            explanation = model.invoke(prompt)
+            config = langfuse_service.get_langchain_config()
+            explanation = model.invoke(prompt, config=config)
             
             return f"""## Task Analysis: {task_description}
 
@@ -325,7 +327,8 @@ class CodeAgent:
         PYTHON CODE:"""
 
         try:
-            code = model.invoke(prompt)
+            config = langfuse_service.get_langchain_config()
+            code = model.invoke(prompt, config=config)
             
             # Clean up the code (remove markdown formatting if present)
             code = self._clean_code_response(code)

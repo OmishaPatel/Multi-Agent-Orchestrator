@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     REDIS_ENABLED: bool = Field(True, description="Enable Redis checkpointing (disable for local testing)")
     ENABLE_CHECKPOINTING: bool = Field(True, description="Enable workflow checkpointing (uses memory if Redis disabled)")
 
+    #LangFuse
+    LANGFUSE_PUBLIC_KEY: Optional[str] = None
+    LANGFUSE_SECRET_KEY: Optional[str] = None
+    LANGFUSE_HOST: str = Field("https://us.cloud.langfuse.com", description="LangFuse host")
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

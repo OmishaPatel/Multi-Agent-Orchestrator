@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional
 from src.graph.state import SubTask, TaskType, TaskStatus
 from src.core.model_service import ModelService
 from src.utils.logging_config import get_logger, get_agent_logger, log_agent_execution
+from src.services.langfuse_service import langfuse_service
 import json
 import re
 
@@ -23,23 +24,57 @@ class PlanningAgent:
         # Store current request for fallback plan generation
         self.current_request = user_request
         
-        try:
-            # Create planning prompt
-            prompt = self._create_planning_prompt(user_request)
+        # Use LangFuse context manager for tracing
+        with langfuse_service.trace_agent_execution(
+            agent_name="planning",
+            task_description=user_request,
+            metadata={"request_length": len(user_request)}
+        ) as span:
             
-            # Get response from LLM
-            response = self.llm.invoke(prompt)
-            
-            # Parse response into structured plan
-            plan = self._parse_plan_response(response)
-            
-            log_agent_execution("planning", user_request, plan)
-            return plan
-            
-        except Exception as e:
-            log_agent_execution("planning", user_request, error=e)
-            # Return fallback plan
-            return self._create_fallback_plan(user_request)
+            try:
+                # Create planning prompt
+                prompt = self._create_planning_prompt(user_request)
+                
+                # Get response from LLM with Langfuse callback and user tracking
+                config = langfuse_service.get_langchain_config()
+                response = self.llm.invoke(prompt, config=config)
+                
+                # Parse response into structured plan
+                plan = self._parse_plan_response(response)
+                
+                # Log successful planning to LangFuse
+                if span:
+                    span.update(
+                        output={
+                            "plan_tasks": len(plan),
+                            "task_types": [task.get('type') if isinstance(task, dict) else task.type for task in plan],
+                            "success": True
+                        }
+                    )
+                
+                langfuse_service.log_custom_event("plan_generated", {
+                    "task_count": len(plan),
+                    "task_types": [task.get('type') if isinstance(task, dict) else task.type for task in plan],
+                    "request_length": len(user_request)
+                })
+                
+                log_agent_execution("planning", user_request, plan)
+                return plan
+                
+            except Exception as e:
+                # Log error to LangFuse
+                if span:
+                    span.update(
+                        output={"error": str(e), "success": False}
+                    )
+                
+                langfuse_service.log_custom_event("planning_error", {
+                    "error": str(e),
+                    "request_length": len(user_request)
+                })
+                
+                log_agent_execution("planning", user_request, error=e)
+                return self._create_fallback_plan(user_request)
     
     def regenerate_plan(self, user_request: str, feedback: str, previous_plan: List[SubTask]) -> List[SubTask]:
         logger.info(f"Regenerating plan based on feedback: {feedback[:100]}...")
@@ -48,8 +83,9 @@ class PlanningAgent:
             # Create regeneration prompt
             prompt = self._create_regeneration_prompt(user_request, feedback, previous_plan)
             
-            # Get response from LLM
-            response = self.llm.invoke(prompt)
+            # Get response from LLM with Langfuse callback and user tracking
+            config = langfuse_service.get_langchain_config()
+            response = self.llm.invoke(prompt, config=config)
             
             # Parse response into structured plan
             plan = self._parse_plan_response(response)

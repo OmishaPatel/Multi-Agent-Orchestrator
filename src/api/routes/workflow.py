@@ -11,6 +11,7 @@ from src.config.settings import get_settings
 from src.utils.logging_config import get_api_logger, RequestLogger, log_api_request
 from src.graph.state import AgentState, SubTask, TaskType,StateManager, TaskStatus, ApprovalStatus, TimestampUtils
 from src.core.redis_state_manager import RedisStateManager
+from src.services.langfuse_service import langfuse_service
 
 router = APIRouter()
 logger = get_api_logger("workflow")
@@ -19,11 +20,13 @@ logger = get_api_logger("workflow")
 class RunRequest(BaseModel):
     user_request: str = Field(..., min_length=1, max_length=5000,
     description="The user's request to be processed by AI system")
+    user_id: Optional[str] = Field(None, description="Optional user identifier for tracking")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "user_request": "Research the latest trends in renewable energy and create a summary report"
+                "user_request": "Research the latest trends in renewable energy and create a summary report",
+                "user_id": "user-123"
             }
         }
 
@@ -286,7 +289,8 @@ async def run_workflow(
             execute_workflow_background,
             workflow_factory,
             request.user_request,
-            thread_id
+            thread_id,
+            request.user_id
         )
         
         logger.info(f"Workflow {thread_id} initiated successfully")
@@ -714,7 +718,8 @@ def _determine_overall_status(
 async def execute_workflow_background(
     workflow_factory: WorkflowFactory,
     user_request: str,
-    thread_id: str
+    thread_id: str,
+    user_id: Optional[str] = None
 ) -> None:
     """
     Execute workflow in background task.
@@ -725,17 +730,92 @@ async def execute_workflow_background(
     """
     
     logger.info(f"Starting background execution for workflow {thread_id}")
+    session_id = langfuse_service.start_user_session(
+        user_id=user_id or f"user_{thread_id[:8]}",  # Use provided user_id or thread_id prefix
+        session_metadata={
+            "request_length": len(user_request),
+            "system_version": "1.0.0",
+            "thread_id": thread_id,
+            "execution_type": "background"
+        }
+    )
+
+    trace_id = langfuse_service.start_workflow_trace(
+        workflow_name="clarity_ai_background_workflow",
+        user_request=user_request,
+        metadata={
+            "session_id": session_id,
+            "workflow_version": "1.0.0",
+            "thread_id": thread_id,
+            "checkpointing_type": workflow_factory.checkpointing_type
+        }
+    )
     
     try:
+        langfuse_service.log_custom_event("workflow_started", {
+            "thread_id": thread_id,
+            "user_request_length": len(user_request),
+            "session_id": session_id,
+            "trace_id": trace_id
+        })
         result = workflow_factory.start_new_workflow(
             user_request=user_request,
             thread_id=thread_id
         )
+
+        # Extract workflow results for logging
+        workflow_result = result.get('result', {}) if result else {}
+        plan = workflow_result.get('plan', [])
+        task_results = workflow_result.get('task_results', {})
+        final_report = workflow_result.get('final_report')
+        
+        # Log successful completion to LangFuse
+        langfuse_service.log_workflow_result(
+            result=final_report or "Workflow completed successfully",
+            success=True,
+            metadata={
+                "total_tasks": len(plan),
+                "completed_tasks": len([t for t in plan if t.get('status') == 'completed']),
+                "failed_tasks": len([t for t in plan if t.get('status') == 'failed']),
+                "session_id": session_id,
+                "trace_id": trace_id,
+                "thread_id": thread_id,
+                "has_final_report": bool(final_report)
+            }
+        )
+        
+        # Log workflow completion event
+        langfuse_service.log_custom_event("workflow_completed", {
+            "thread_id": thread_id,
+            "total_tasks": len(plan),
+            "completed_tasks": len([t for t in plan if t.get('status') == 'completed']),
+            "execution_success": True,
+            "session_id": session_id
+        })
+        
         
         logger.info(f"Workflow {thread_id} completed successfully")
         logger.debug(f"Workflow result keys: {list(result.get('result', {}).keys()) if result.get('result') else 'No result'}")
         
     except Exception as e:
+        langfuse_service.log_workflow_result(
+            result=str(e),
+            success=False,
+            metadata={
+                "error_type": type(e).__name__,
+                "session_id": session_id,
+                "trace_id": trace_id,
+                "thread_id": thread_id
+            }
+        )
+        
+        # Log workflow error event
+        langfuse_service.log_custom_event("workflow_error", {
+            "thread_id": thread_id,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "session_id": session_id
+        })
         logger.error(f"Background workflow execution failed for {thread_id}: {str(e)}", exc_info=True)
         # Optionally save error state to Redis if available
         try:
@@ -776,6 +856,15 @@ async def process_approval_background(
     
     logger.info(f"Starting background approval processing for workflow {thread_id}")
     logger.info(f"DIAGNOSTIC: approved={approved}, feedback={feedback}")
+
+    # Log approval decision to LangFuse
+    langfuse_service.log_custom_event("approval_decision", {
+        "thread_id": thread_id,
+        "approved": approved,
+        "has_feedback": bool(feedback),
+        "feedback_length": len(feedback) if feedback else 0
+    })
+
     
     try:
         # Determine approval status string
@@ -792,6 +881,11 @@ async def process_approval_background(
         logger.info(f"DIAGNOSTIC: resume_after_approval returned: {type(result)}")
         
         if approved:
+            langfuse_service.log_custom_event("approval_processed", {
+                "thread_id": thread_id,
+                "approved": True,
+                "workflow_resumed": True
+            })
             logger.info(f"Workflow {thread_id} resumed successfully after approval")
             logger.info(f"DIAGNOSTIC: Resumed workflow result keys: {list(result.keys()) if result else 'No result'}")
             
@@ -810,10 +904,24 @@ async def process_approval_background(
                     status = task.get('status', 'unknown')
                     logger.info(f"DIAGNOSTIC: Task {i+1} status: {status}")
         else:
+            # Log plan rejection processing
+            langfuse_service.log_custom_event("approval_processed", {
+                "thread_id": thread_id,
+                "approved": False,
+                "plan_regeneration_initiated": True,
+                "feedback_provided": bool(feedback)
+            })
             logger.info(f"Workflow {thread_id} plan regeneration initiated with feedback")
             logger.info(f"DIAGNOSTIC: Plan regeneration result keys: {list(result.keys()) if result else 'No result'}")
         
     except Exception as e:
+        # Log approval processing error
+        langfuse_service.log_custom_event("approval_error", {
+            "thread_id": thread_id,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "approved": approved
+        })
         logger.error(f"Background approval processing failed for {thread_id}: {str(e)}", exc_info=True)
         
         # Save error state to Redis if available
