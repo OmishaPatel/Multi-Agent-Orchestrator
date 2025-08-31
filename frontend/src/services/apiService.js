@@ -543,6 +543,11 @@ export class ApiService {
                 break;
 
             case 'completed':
+                // Prevent duplicate completion state updates
+                if (currentState.status === 'completed') {
+                    console.log('[ApiService] Already in completed state, ignoring duplicate completion update');
+                    return;
+                }
                 stateUpdates.status = 'completed';
                 stateUpdates.finalReport = statusData.final_report;
                 stateUpdates.taskResults = statusData.task_results || {};
@@ -754,6 +759,14 @@ export class ApiService {
                     // Only act on completion or error states
                     if (statusData.status === 'completed') {
                         console.log('[ApiService] Workflow completed! Transitioning to results');
+
+                        // Check if we're already completed to prevent duplicate transitions
+                        const currentState = this.stateManager.getState();
+                        if (currentState.status === 'completed') {
+                            console.log('[ApiService] Already in completed state, ignoring duplicate completion');
+                            clearInterval(this.gentlePollingInterval);
+                            return;
+                        }
 
                         // Stop simulation and polling
                         clearInterval(this.progressSimulationInterval);

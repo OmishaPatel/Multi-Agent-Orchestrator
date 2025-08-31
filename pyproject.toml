@@ -28,6 +28,7 @@ apscheduler = "^3.10.4"
 aiohttp = "^3.9.0"
 nest-asyncio = "^1.5.8"
 setuptools = "^80.9.0"
+langfuse = "^3.2.4"
 
 
 [tool.poetry.group.dev.dependencies]

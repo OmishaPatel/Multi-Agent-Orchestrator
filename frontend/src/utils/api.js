@@ -107,12 +107,34 @@ export class ApiClient {
     }
 
     /**
+     * Get or create a persistent user ID for tracking
+     */
+    getOrCreateUserId() {
+        const storageKey = 'clarity_user_id';
+        let userId = localStorage.getItem(storageKey);
+
+        if (!userId) {
+            // Generate a simple user ID
+            userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            localStorage.setItem(storageKey, userId);
+        }
+
+        return userId;
+    }
+
+    /**
      * Submit a new request to start workflow
      */
-    async submitRequest(request, threadId = null) {
+    async submitRequest(request, threadId = null, userId = null) {
+        // Auto-generate persistent user ID if not provided
+        if (!userId) {
+            userId = this.getOrCreateUserId();
+        }
+
         const payload = {
             user_request: request.trim(),
-            ...(threadId && { thread_id: threadId })
+            ...(threadId && { thread_id: threadId }),
+            ...(userId && { user_id: userId })
         };
 
         const response = await this.request('/run', {

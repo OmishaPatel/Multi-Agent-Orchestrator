@@ -157,9 +157,6 @@ export class PlanVerification {
                     <strong>${plan.length}</strong> tasks
                 </span>
                 <span class="plan-verification__stat">
-                    <strong>${this.getUniqueTaskTypes(plan).length}</strong> agent types
-                </span>
-                <span class="plan-verification__stat">
                     <strong>${this.calculateEstimatedTime(plan)}</strong> estimated time
                 </span>
             </div>
@@ -197,7 +194,7 @@ export class PlanVerification {
                 </div>
                 ${hasDependencies ? `
                     <div class="plan-verification__task-dependencies">
-                        Depends on: ${task.dependencies.map(dep => `#${dep + 1}`).join(', ')}
+                        Depends on: ${task.dependencies.map(dep => `#${dep}`).join(', ')}
                     </div>
                 ` : ''}
             </div>

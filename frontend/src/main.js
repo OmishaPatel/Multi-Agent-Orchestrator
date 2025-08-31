@@ -19,6 +19,7 @@ class ClarityApp {
     this.stateManager = stateManager;
     this.eventBus = eventBus;
     this.apiService = apiService;
+    this.lastRenderedStatus = null; // Track last rendered status to prevent duplicates
     this.init();
   }
 
@@ -107,6 +108,14 @@ class ClarityApp {
   render() {
     const currentState = this.stateManager.getState();
     console.log('[ClarityApp] Rendering with status:', currentState.status, 'threadId:', currentState.threadId);
+
+    // Track the last rendered status to prevent unnecessary re-renders
+    if (this.lastRenderedStatus === currentState.status && currentState.status === 'completed') {
+      console.log('[ClarityApp] Already rendered completed status, skipping duplicate render');
+      return;
+    }
+
+    this.lastRenderedStatus = currentState.status;
 
     switch (currentState.status) {
       case 'idle':
@@ -371,14 +380,26 @@ In conclusion, the impact of AI on job markets is multifaceted, with both opport
     const currentState = this.stateManager.getState();
     console.log('[ClarityApp] Rendering results with state:', currentState);
 
+    // CRITICAL: Check if we already have a finalResult component to prevent duplicates
+    if (this.finalResult) {
+      console.log('[ClarityApp] FinalResult component already exists, skipping duplicate creation');
+      return;
+    }
+
     // Clear existing content
     DOMUtils.clearElement(this.elements.content);
 
-    // Cleanup other components
+    // Cleanup other components (but not finalResult since we're creating it)
     this.cleanupComponents(['inputForm', 'executionFlow', 'planVerification']);
 
     // Import and use FinalResult component
     import('./components/FinalResult/FinalResult.js').then(({ FinalResult }) => {
+      // Double-check we don't already have a component (race condition protection)
+      if (this.finalResult) {
+        console.log('[ClarityApp] FinalResult component created during import, skipping duplicate');
+        return;
+      }
+
       // Create container for FinalResult
       const resultsContainer = document.createElement('div');
       resultsContainer.className = 'results-container';
@@ -486,6 +507,15 @@ In conclusion, the impact of AI on job markets is multifaceted, with both opport
   }
 
   resetToIdle() {
+    // First cleanup all components to prevent duplicates
+    this.cleanupAllComponents();
+
+    // Stop any ongoing polling
+    if (this.apiService) {
+      this.apiService.forceStopPolling();
+    }
+
+    // Reset state
     this.stateManager.setState({
       status: 'idle',
       error: null,
@@ -493,7 +523,11 @@ In conclusion, the impact of AI on job markets is multifaceted, with both opport
       threadId: null,
       plan: null,
       progress: 0,
-      isLoading: false
+      isLoading: false,
+      finalReport: null,
+      taskResults: {},
+      currentTaskId: null,
+      simulatedProgress: 0
     }, 'user.reset');
   }
 
@@ -512,6 +546,14 @@ In conclusion, the impact of AI on job markets is multifaceted, with both opport
         this[componentName] = null;
       }
     });
+  }
+
+  /**
+   * Cleanup ALL components including finalResult
+   */
+  cleanupAllComponents() {
+    console.log('[ClarityApp] Cleaning up ALL components');
+    this.cleanupComponents(['inputForm', 'executionFlow', 'planVerification', 'finalResult']);
   }
 
   handleError(error) {
